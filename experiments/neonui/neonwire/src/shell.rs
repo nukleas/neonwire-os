@@ -41,7 +41,7 @@ impl Shell {
             touch,
             apps: vec![
                 Box::new(crate::apps::system::SystemApp::new()),
-                Box::new(crate::apps::network::NetworkApp),
+                Box::new(crate::apps::network::NetworkApp::new()),
                 Box::new(crate::apps::camera::CameraApp::new()),
                 Box::new(crate::apps::music::MusicApp::new()),
             ],
@@ -166,13 +166,24 @@ impl Shell {
         }
     }
 
-    /// Render one frame and dump it (--shot / --tap harness).
-    pub fn shot(&mut self, taps: &[(i32, i32)], path: Option<&str>) {
+    /// Render one frame and dump it (--shot / --tap harness). `ticks` runs
+    /// N 1 Hz tick rounds after each tap so async state machines (wifi scan,
+    /// camprobe) settle before the shot.
+    pub fn shot(&mut self, taps: &[(i32, i32)], ticks: u32, path: Option<&str>) {
         self.fb.print_shot_line();
         self.draw();
         for &(sx, sy) in taps {
             println!("TAP ({sx},{sy})");
             self.on_tap(sx, sy);
+            for _ in 0..ticks {
+                std::thread::sleep(Duration::from_secs(1));
+                self.collectors.refresh();
+                if let Screen::App(i) = self.screen {
+                    let snap = &self.collectors.snap;
+                    let mut ctx = Ctx { snap, toast: &mut self.toast };
+                    self.apps[i].tick(&mut ctx);
+                }
+            }
             self.draw();
         }
         if let Some(p) = path {

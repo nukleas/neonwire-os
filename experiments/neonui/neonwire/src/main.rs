@@ -9,6 +9,8 @@ mod audio;
 mod collectors;
 mod shell;
 mod statusbar;
+mod widgets;
+mod wpa;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -24,8 +26,37 @@ fn main() {
         Some("--probe") => probe_touch(&args, false),
         Some("--evdump") => probe_touch(&args, true),
         Some("--tone") => tone(),
+        Some("--wpa-probe") => wpa_probe(),
         _ => run_shell(&args),
     }
+}
+
+/// M6a verification: exercise the wpa ctrl client headlessly over SSH.
+fn wpa_probe() {
+    let mut w = wpa::Wpa::default();
+    println!("wlan present: {}", wpa::wlan_present());
+    println!("ctrl available: {}", w.available());
+    if let Some(st) = w.cmd("STATUS") {
+        println!(
+            "wpa_state={:?} ssid={:?}",
+            wpa::Wpa::field(&st, "wpa_state"),
+            wpa::Wpa::field(&st, "ssid")
+        );
+    }
+    println!("known networks: {:?}", w.list_networks());
+    if w.cmd("SCAN").is_some() {
+        println!("scan sent; waiting 4s...");
+        std::thread::sleep(Duration::from_secs(4));
+        match w.scan_results() {
+            Some(aps) => {
+                for ap in aps {
+                    println!("  {:<26} {:>5} dBm  {}", ap.ssid, ap.rssi, if ap.wpa { "WPA2" } else { "open" });
+                }
+            }
+            None => println!("scan_results failed"),
+        }
+    }
+    println!("WPA-PROBE DONE");
 }
 
 /// B2 verification: 2 s of 440 Hz through the raw-ioctl PCM path, no libasound.
@@ -72,6 +103,7 @@ fn run_shell(args: &[String]) {
     // headless modes: --shot PATH renders one frame; --tap X Y (repeatable) taps first
     let mut shot_path = None;
     let mut taps = Vec::new();
+    let mut ticks = 0u32;
     let mut dev = "/dev/input/event4".to_string();
     let mut opts = neon_gfx::input::TouchOpts::default();
     let mut i = 1;
@@ -79,6 +111,10 @@ fn run_shell(args: &[String]) {
         match args[i].as_str() {
             "--shot" if i + 1 < args.len() => {
                 shot_path = Some(args[i + 1].clone());
+                i += 1;
+            }
+            "--ticks" if i + 1 < args.len() => {
+                ticks = args[i + 1].parse().unwrap_or(0);
                 i += 1;
             }
             "--tap" if i + 2 < args.len() => {
@@ -103,7 +139,7 @@ fn run_shell(args: &[String]) {
 
     if shot_path.is_some() || !taps.is_empty() {
         let mut sh = shell::Shell::new(fb, None);
-        sh.shot(&taps, shot_path.as_deref());
+        sh.shot(&taps, ticks, shot_path.as_deref());
         return;
     }
     let touch = neon_gfx::input::Touch::open(&dev, opts)
