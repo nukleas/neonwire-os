@@ -40,7 +40,7 @@ impl Shell {
             fb,
             touch,
             apps: vec![
-                Box::new(crate::apps::system::SystemApp),
+                Box::new(crate::apps::system::SystemApp::new()),
                 Box::new(crate::apps::network::NetworkApp),
                 Box::new(crate::apps::camera::CameraApp::new()),
                 Box::new(crate::apps::music::MusicApp::new()),
