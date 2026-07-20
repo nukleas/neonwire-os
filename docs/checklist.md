@@ -88,7 +88,35 @@ See [17-cyberpunk-fbui.md](17-cyberpunk-fbui.md). Aesthetic from `in-repo palett
 - [x] Boot splash + autostart **CONFIRMED ON DEVICE**: flashed `out/boot-linux-l1-neonos.img` @ 0x1d80000; boots straight into the NeonOS UI (kernel unchanged, serial-shell recovery preserved). Flash: `./tools/flash-neonos.sh`
 - [x] **DIGILAND LK logo replaced** (built + verified): decoded MTK logo.bin (39 zlib'd 1024x600 32bpp BGRA blobs), regenerated NEONWIRE splash into slots 0 & 38, kept battery frames byte-identical, fits partition (432<452 KB). `experiments/fbui/make_logo.py` → `out/logo-neonos.bin`. Flash: `./tools/flash-neonos.sh logo` (**pending on-device flash**)
 - [ ] Output-capturing action tiles (shell cmd → overlay); scroll/gestures for KERNLOG/PROCESS
-- [ ] Network panel goes live when Wi-Fi unblocks
+- [x] Network panel goes live (full Wi-Fi manager — see Phase F)
+
+## Phase F — Rust OS platform (`experiments/neonui/`)
+
+See [26-devlog-rust-shell.md](26-devlog-rust-shell.md). The C `neui` HUD grew into a Rust
+app platform; `neui` stays in initramfs as recovery, the Rust shell runs via `mount --bind`.
+
+- [x] **Rust engine + shell** (`neon-gfx` + `neonwire`, static armv7-musl, `libc`-only):
+  ported `fbgfx.h` (PAN-cycle present, canvas/draw/font, cyberdesign theme system), evdev
+  touch (hand-declared 16-byte `input_event` for the 3.18 kernel), App trait + HitMap
+- [x] **Status bar + home grid + apps**: SYSTEM (INFO/PROC/DISK/KLOG + tool overlay +
+  REBOOT confirm), NETWORK (full wpa manager + PSK keyboard `TextPrompt` widget), CAMERA,
+  MUSIC
+- [x] **Audio works** — first sound on L1: `Speaker_Amp_Switch On` + live `hw:0,5` stream
+  (S16_LE/44100, period 2048 / buffer 4096 max). Recipe: `experiments/audio/audio-recipe.md`
+- [x] **MUSIC = real drum machine**: libasound-free PCM writer (`/dev/snd/pcmC0D5p` ioctls,
+  3.18 uapi structs) fed by a **strudel-core** pattern clock + synth voices; mini-notation
+  presets eval on-device
+- [x] **Camera sensor ALIVE**: SP2509 reads ID `0x2509` on L1 — the fix was the seninf TG1
+  phase-counter `PCEN` bit (`SENINF_TG1_PH_CNT=0xA0000001`), MCLK via ISP_WRITE_REGISTER.
+  `experiments/camera/camprobe.c`
+- [x] **Power management**: idle backlight-blank (physically confirmed), low-battery banner
+  + clean auto-shutdown before 0%, real CPU% from /proc/stat (loadavg was D-state kthreads)
+- [~] **Camera A3 (raw frame)**: full pass1 pipeline built + safe (ion+M4U buffer, DMA,
+  trigger all work); **blocked on CSI-2 receiver lock** — sensor streams but no MIPI data
+  reaches the TG. `experiments/camera/camgrab.c` + `debayer.py`. Parked one handshake short.
+- [ ] Strudel live-coding text input (make MUSIC "more strudel")
+- [ ] Suspend-to-RAM (`/sys/power/state mem`) — big battery win, test in-person (risky remote)
+- [ ] Soak the Rust shell as daily driver, then native initramfs boot swap (retire bind-mount)
 
 ## Lab log
 
@@ -138,3 +166,9 @@ See [17-cyberpunk-fbui.md](17-cyberpunk-fbui.md). Aesthetic from `in-repo palett
 | 2026-07-19 | **Clean git repo + sync scaffolding.** `git init` → private **github.com/nukleas/neonwire-os** (125 source files, 3.9M; binaries/kernels/blobs gitignored). `tools/publish.sh` (build→GitHub release) + `experiments/net/neon-sync.sh` (device wgets artifacts, self-applies) for hands-off updates. Gotchas found: 2× neui = framebuffer flashing (one instance only); loadavg ~8 is D-state kernel threads, not CPU; telnetd/dropbear need devpts mounted or they serve once. |
 | 2026-07-19 | **★★ CABLE RETIRED — autostart boots straight onto Wi-Fi + SSH.** Flashed boot-linux-l1-neonos.img with the autostart init; cold boot brings up CONSYS → joins the lab Wi-Fi → DHCP → dropbear with zero cable (verified: uptime 2min, `wifi: wifi-up2.sh exited rc=0`, dropbear UP, neui 1 instance, ssh'd in over wifi). Init only bootstraps `/mnt/sd/linux-lab/wifi-up2.sh` so the logic stays editable without reflash. Also: **`neon-selfflash.sh`** makes kernel/initramfs OTA (dd verified boot.img → /dev/mmcblk0 @ sector 60416, magic-checked, SD backup + read-back sha) — this was the LAST cable flash. Niggle: DHCP IP drifts (.32→.33 across boots); tailscale/reservation/static IP TBD. |
 | 2026-07-19 | **★★ TAILSCALE — off-LAN access, autostarts on boot.** TUN is built into the 3.18 kernel (`/proc/misc: tun`), so no rebuild. Static tailscale/tailscaled v1.98.9 on SD, state at ts-state/; `tailscale-up.sh` (rm stale socket, setsid-detach) launched by wifi-join.sh after DHCP → auto-reconnects from saved state, no re-auth. Node **dl7006-neonos @ 100.x.y.z**; `ssh root@100.x.y.z` works from anywhere. **Validated after an unattended reboot** (neui REBOOT tile works): came back with wifi+dropbear+tailscale all up, ssh'd in over the tailnet. LAN IP drifts (.33→.35, the AP ignored udhcpc -r) but tailnet addr is stable so it's moot. Gotcha: busybox has no iptables → nft-forced mode; kill -9 orphans nft rules (restart-in-place fails) but clean boot is fine. |
+| 2026-07-19 | **★ FIRST SOUND.** Speaker works on L1: `Speaker_Amp_Switch On` + live `aplay -D hw:0,5 --period-size=2048 --buffer-size=4096` (buffer 4096 = hard driver max; DAPM auto-powers the path). `experiments/audio/audio-recipe.md`. Volume = `Audio_Speaker_PGA_gain`. |
+| 2026-07-19 | **★★ RUST OS REWRITE (docs/26 devlog).** Ported the C HUD → Rust app platform `experiments/neonui/` (`neon-gfx`+`neonwire`, static armv7-musl, libc-only). M0–M6: engine + touch + status bar + home grid + SYSTEM(tabs+tools+reboot) + full Wi-Fi manager (wpa ctrl socket, scan, PSK keyboard) + CAMERA/MUSIC apps. Runs via `mount --bind` over /bin/neui (C neui = recovery). Validated headlessly (`--shot`/`--tap`/`--ticks`) + on glass. Toolchain risks retired in M0 (musl-1.2 time64 ENOSYS fallback, getrandom, strudel cross-compile). |
+| 2026-07-19 | **MUSIC = drum machine.** libasound-free PCM writer (`/dev/snd/pcmC0D5p` ioctls, 3.18 uapi structs) fed by a **strudel-core** pattern clock + hand-rolled synth voices; mini-notation presets (`bd*4,[~ hh]*4`, euclid `bd(3,8)`) eval on-device via strudel-mini. Euclid slaps. |
+| 2026-07-20 | **★ CAMERA SENSOR ALIVE.** SP2509 reads ID **0x2509** on L1. Fix = the seninf TG1 **phase-counter PCEN bit** (`SENINF_TG1_PH_CNT=0xA0000001`, not just ADCLK_EN bit29 the old probe set) — MCLK never oscillated without it. Programmed via ISP_WRITE_REGISTER (seninf is in the [0x4000,0x10000) window); GPIO119/CMMCLK pad already muxed by LK. `experiments/camera/camprobe.c`, Camera app shows SENSOR ONLINE. |
+| 2026-07-20 | **Camera A3 pipeline built (parked 1 handshake short).** Full HAL-free pass1 capture in `camgrab.c`: **ion+M4U buffer works** (multimedia heap → CONFIG_BUFFER(CAM_IMGO=17) → GET_PHYS MVA → `MTK_M4U_T_CONFIG_PORT(Virtuality=1)` via /proc/M4U_device; safety-gated). Sensor streams (X_CONTROL preview), ISP TG/IMGO configured. But **PASS1_TG1_DON times out — CSI-2 receiver not locking** (TG frame/line counts stay 0). Every structural unknown works; next = stock analog register dump. `debayer.py` ready. |
+| 2026-07-20 | **Power management (round 1+2).** Idle backlight-blank (`/sys/class/leds/lcd-backlight`, 30s→off, tap wakes, physically confirmed); low-battery banner <15% + clean sync+poweroff <3% (debounced, charging-guarded); status bar now real CPU% from /proc/stat (loadavg ~8 was D-state vendor kthreads, CPU ~90% idle). Suspend-to-RAM deferred (risky to test remotely). |
