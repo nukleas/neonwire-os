@@ -46,11 +46,25 @@ corrupting memory. Every stage initializes correctly EXCEPT the MIPI CSI-2 recei
 **Next (the remaining RE target): CSI-2 analog PHY bring-up.** camgrab's `csi2_analog()`
 replicates initTg1CSI2 (LDO/BG enable, lane enables, HW cal handshake via the mmap'd
 0x10010000 block + in-window 0xC024/0xC038/0xC03C), but it's evidently not achieving
-lane lock. Likely needs: (a) verify the analog mmap writes actually stick (MIPI power
-domain), (b) the exact settle-delay / lane-enable / calibration values — best obtained
-by reading the SENINF+MIPIRX-analog register values live from a stock capture (dump
-0x8000-0x8130 and the analog block right after stock streams), (c) possibly dlane_num=1
-lane-field encoding in CSI2_CTRL. This is the one undocumented-register stage left.
+lane lock. Ruled out: the analog mmap writes **do stick** (readback confirms:
+[0x00]=0x8009, [0x20]=0xff000003, [0x24]=0x24248803 after our writes — the MIPI analog
+power domain is on). So the blocker is the calibration *logic*, not access. Remaining
+suspects: (a) the HW-cal completion handshake (we write cal-start 0xC038|=0x4 but never
+poll a cal-done bit before clearing SW_CTRL_MODE), (b) exact settle-delay/lane-enable
+values, (c) dlane_num=1 lane-field encoding in CSI2_CTRL. `SENINF1 status`
+0x8014=0x8000007f (constant) likely encodes the unlocked/error state — decoding it needs
+the seninf CSI2 status-register bit map.
+
+**A2 NOTE (what the stock capture does/doesn't have):** `reference/android-capture/` is
+**logcat + kernel-ring logs**, NOT register-value dumps. It gives the HAL call *sequence*
+(setTg1CSI2, SettleDelay:14) + confirms streaming + the sensor's I2C table — but the
+SENINF/MIPIRX-analog register VALUES the HAL wrote to memory were never logged. To get
+known-good analog values, a deliberate register dump on a fresh stock boot is needed
+(the existing capture predates knowing we'd want it). Alternatives: disassemble the
+stock libseninf/mtkcam .so for the exact writes + completion polls.
+
+**Parked here (2026-07-20)** as a strong checkpoint: the whole pipeline is built and
+safe, one MIPI-receive handshake short of an image.
 
 The MCLK milestone + this pipeline prove the userspace-register approach works end to
 end; only the MIPI receive handshake remains between here and photons.
