@@ -9,4 +9,6 @@ pub mod draw;
 pub mod fb;
 pub mod font;
 pub mod font_data;
+pub mod geom;
+pub mod input;
 pub mod theme;

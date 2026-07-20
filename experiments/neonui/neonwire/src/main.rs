@@ -1,8 +1,13 @@
 //! neonwire — NEONWIRE OS shell.
 //!
-//! Current state: M0 toolchain-validation probe. Run with `--m0` on the DL7006 to
-//! verify the four risks called out in the plan: musl-1.2 time64 → ENOSYS fallback
-//! on the 3.18 kernel, getrandom(2) availability, std fs, and process spawn.
+//! Default mode runs the shell (status bar + home + apps). Diagnostic modes:
+//! --m0 (toolchain probe), --smoke (fb animation), --card (engine test card),
+//! --probe/--evdump (touch calibration), --shot/--tap (headless render/tap).
+
+mod apps;
+mod collectors;
+mod shell;
+mod statusbar;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -14,12 +19,103 @@ fn main() {
     match args.get(1).map(String::as_str) {
         Some("--m0") => m0_probe(),
         Some("--smoke") => smoke(args.get(2).map(String::as_str)),
-        Some("--card") | None => testcard(args.get(2).map(String::as_str)),
-        Some(other) => {
-            eprintln!("neonwire: unknown arg {other}");
-            std::process::exit(2);
+        Some("--card") => testcard(args.get(2).map(String::as_str)),
+        Some("--probe") => probe_touch(&args, false),
+        Some("--evdump") => probe_touch(&args, true),
+        _ => run_shell(&args),
+    }
+}
+
+fn run_shell(args: &[String]) {
+    let fb = match neon_gfx::fb::Fb::open() {
+        Ok(fb) => fb,
+        Err(e) => {
+            eprintln!("fb: {e}");
+            std::process::exit(1);
+        }
+    };
+    // headless modes: --shot PATH renders one frame; --tap X Y (repeatable) taps first
+    let mut shot_path = None;
+    let mut taps = Vec::new();
+    let mut dev = "/dev/input/event4".to_string();
+    let mut opts = neon_gfx::input::TouchOpts::default();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--shot" if i + 1 < args.len() => {
+                shot_path = Some(args[i + 1].clone());
+                i += 1;
+            }
+            "--tap" if i + 2 < args.len() => {
+                let x = args[i + 1].parse().unwrap_or(0);
+                let y = args[i + 2].parse().unwrap_or(0);
+                taps.push((x, y));
+                i += 2;
+            }
+            "--dev" if i + 1 < args.len() => {
+                dev = args[i + 1].clone();
+                i += 1;
+            }
+            "--swap" => opts.swap = true,
+            "--flipx" => opts.flipx = true,
+            "--flipy" => opts.flipy = true,
+            _ => {}
+        }
+        i += 1;
+    }
+    // NOTE: no SIGCHLD=SIG_IGN here (it would auto-reap and break Child::try_wait
+    // for camprobe). M6's fire-and-forget wifi spawns will need per-spawn handling.
+
+    if shot_path.is_some() || !taps.is_empty() {
+        let mut sh = shell::Shell::new(fb, None);
+        sh.shot(&taps, shot_path.as_deref());
+        return;
+    }
+    let touch = neon_gfx::input::Touch::open(&dev, opts)
+        .map_err(|e| eprintln!("touch {dev}: {e} (running without input)"))
+        .ok();
+    shell::Shell::new(fb, touch).run();
+}
+
+/// M3: touch calibration. --probe prints mapped taps; --evdump prints raw events.
+/// Optional trailing arg = seconds to run (default 15, for headless SSH runs).
+fn probe_touch(args: &[String], raw: bool) {
+    use neon_gfx::input::{poll_fd, Touch, TouchOpts};
+    let dev = args
+        .iter()
+        .position(|a| a == "--dev")
+        .and_then(|i| args.get(i + 1).cloned())
+        .unwrap_or_else(|| "/dev/input/event4".into());
+    let secs: u64 = args.last().and_then(|s| s.parse().ok()).unwrap_or(15);
+    let opts = TouchOpts {
+        swap: args.iter().any(|a| a == "--swap"),
+        flipx: args.iter().any(|a| a == "--flipx"),
+        flipy: args.iter().any(|a| a == "--flipy"),
+    };
+    let mut t = match Touch::open(&dev, opts) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{dev}: {e}");
+            std::process::exit(1);
+        }
+    };
+    println!("{}: tap the screen now ({secs}s)...", if raw { "evdump" } else { "probe" });
+    let deadline = std::time::Instant::now() + Duration::from_secs(secs);
+    while std::time::Instant::now() < deadline {
+        if !poll_fd(t.fd(), 500) {
+            continue;
+        }
+        if raw {
+            while let Some(ev) = t.read_raw() {
+                println!("ev type={} code={} val={}", ev.type_, ev.code, ev.value);
+            }
+        } else {
+            for (sx, sy) in t.drain(1024, 600) {
+                println!("tap screen({sx},{sy})");
+            }
         }
     }
+    println!("PROBE DONE");
 }
 
 /// M2: static test card exercising every engine primitive, for --shot comparison
