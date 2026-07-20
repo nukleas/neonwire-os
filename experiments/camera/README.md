@@ -24,9 +24,36 @@ I2C ID reads 0x0000. One bit.
 is blocked (STRICT_DEVMEM) so camprobe can't set it, but it doesn't need to. Register
 map came from the MT8127 mtkcam HAL source (`seninf_reg.h`, mt8127-tadpole vendor tree).
 
-Next: A3 — program seninf CSI-2 + ISP pass1 to DMA a raw Bayer frame to DRAM (the HAL
-sequence after this: `initTg1CSI2` calibration → `setTg1GrabRange` → pass1). The MCLK
-milestone proves the userspace-register approach works end to end.
+## A3 status: full capture pipeline built + safe; CSI-2 receiver not locking yet
+
+`camgrab.c` assembles the entire HAL-free pass1 path and runs without crashing or
+corrupting memory. Every stage initializes correctly EXCEPT the MIPI CSI-2 receive:
+
+- ✅ MCLK + sensor open (reads 0x2509) + **streaming** — dmesg confirms
+  `SP2509MIPIPreview`/`SP2509MIPIControl` ran (X_CONTROL preview scenario works).
+- ✅ **ion DMA buffer + M4U** — `ION_MM_CONFIG_BUFFER(CAM_IMGO=17)` → `GET_PHYS` MVA
+  0x00040000 → **`MTK_M4U_T_CONFIG_PORT(CAM_IMGO, Virtuality=1)` via /proc/M4U_device**
+  makes the MVA translate. SAFETY GATE: camgrab aborts before enabling the DMA if the
+  port config fails (else the engine emits the MVA as a raw phys addr into low memory).
+- ✅ ISP TG1 grab-window + IMGO DMA config (offsets from isp_reg.h: IMGO BASE 0x4300 /
+  XSIZE 0x4308 / YSIZE 0x430C / STRIDE 0x4310; TG grab 0x4418/0x441C; CTL_EN1 0x4004
+  TG1_EN|CAM_EN; DMA_EN 0x400C IMGO_EN). VF-enable at 0x4414 bit0.
+- ❌ **No frame completes.** `PASS1_TG1_DON` (INT bit 10) times out after 2 s;
+  `CAM_TG_FRM_CNT_ST`(0x4444)=0 and `CAM_TG_FRMSIZE_ST`(0x4448 line count)=0 the whole
+  time. So the sensor streams but **no MIPI data reaches the TG** — the CSI-2 PHY isn't
+  locking. `SENINF1 status`(0x8014)=0x8000007f, constant (idle/unlocked).
+
+**Next (the remaining RE target): CSI-2 analog PHY bring-up.** camgrab's `csi2_analog()`
+replicates initTg1CSI2 (LDO/BG enable, lane enables, HW cal handshake via the mmap'd
+0x10010000 block + in-window 0xC024/0xC038/0xC03C), but it's evidently not achieving
+lane lock. Likely needs: (a) verify the analog mmap writes actually stick (MIPI power
+domain), (b) the exact settle-delay / lane-enable / calibration values — best obtained
+by reading the SENINF+MIPIRX-analog register values live from a stock capture (dump
+0x8000-0x8130 and the analog block right after stock streams), (c) possibly dlane_num=1
+lane-field encoding in CSI2_CTRL. This is the one undocumented-register stage left.
+
+The MCLK milestone + this pipeline prove the userspace-register approach works end to
+end; only the MIPI receive handshake remains between here and photons.
 
 ---
 
