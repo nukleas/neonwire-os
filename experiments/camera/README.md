@@ -36,20 +36,50 @@ The neonwire Camera app spawns it to light its ONLINE/OFFLINE state. Modes:
   stock seninf_drv.cpp does pin-mux/PLL/MIPI config entirely from userspace — and how
   our capture pipeline can too. No kernel patching needed.
 
-### Root-cause hypotheses for ID=0x0000 (next session, in order)
+### Root cause of ID=0x0000 — ANSWERED by the stock capture (A2, already done)
 
-1. **CMMCLK pin mux** not in clock-function mode — dump/set via the GPIO block mmap.
-2. **MCLK divider/PLL** unconfigured — bit 29 gates a clock whose source isn't running;
-   seninf_drv.cpp (mt6589-era open HAL trees) documents the required PLL + `SENINF_CK` regs.
-3. Reg map delta between DL7006 seninf and the reference tree.
+The A2 stock-Android trace was captured 2026-07-19 and lives in
+`reference/android-capture/` (`devicetest-kernel.log` + `devicetest-main.log`, via
+`adb logcat -b kernel`). Reading it back answers the MCLK question outright — no new
+boot needed:
 
-Decisive experiment: boot stock Android, run its camera, and dump SENINF + PLL + GPIO
-blocks (same mmap offsets); diff against L1 state. Every delta is a register we must set.
+- Stock reads the ID **successfully**: `[SP2509MIPIRaw] gpw sensorIDL = 0x2509`
+  (kernel log 2202.898). So power + I2C + the driver are fine; the only thing our
+  camprobe lacked is a **running MCLK**.
+- The HAL step our probe skips (main log 2202.638, immediately before the ID read):
+  ```
+  SensorHal: [setTgPhase] Tg1clk: 24, mclk1: 48000, clkCnt1: 1
+  SeninfDrvImp: [setTg1PhaseCounter] pcEn(1) clkPol(0)
+  ```
+  i.e. it programs the **seninf TG1 phase counter** (source 48 MHz ÷2 → 24 MHz to the
+  sensor pad, counter enabled). `ISP_MCLK1_EN` (bit 29 @ CAMINF+0x8300) only *gates*
+  that clock — without `setTg1PhaseCounter pcEn=1` there is no oscillation, so the
+  sensor can't clock out its ID. **That is the exact camprobe gap.**
+- Full stock preview order (main log): `SeninfDrv init` → `setTgPhase`/
+  `setTg1PhaseCounter` (MCLK on) → sensor `Open`/ID read → `initTg1CSI2` (CSI-2 lane
+  **calibration**, SettleDelay 14) → `setTg1GrabRange`/`setTg1SensorModeCfg`/
+  `setTg1InputCfg inSrcTypeSel=8` → ISP pass1 DMA. `ISP_mmap` shows the HAL maps the
+  SENINF/PLL/MIPI-RX/GPIO blocks (pgoff 0x10, 0x10000 window) to do all of this from
+  userspace — confirming our L1 path needs no kernel patch.
+
+**Next camprobe iteration:** find the TG1 phase-counter register in the seninf block
+(mmap `/dev/camera-isp` at SENINF_BASE, or via ISP_WRITE_REGISTER if it falls in the
+CAMINF+0x4000..0x10000 window) and replicate `setTg1PhaseCounter pcEn(1)` +
+`setTgPhase mclk1=48000` before CHECK_IS_ALIVE. Cross-reference the mt6589-era open
+seninf_drv.cpp for the register offsets behind these HAL calls.
 
 ## Files
 
 - `camprobe.c` — liveness probe (deployed at `/mnt/sd/linux-lab/camprobe`)
 - Build: `armv7l-linux-musleabihf-gcc -Os -static -no-pie -Wall -o camprobe camprobe.c`
+
+## A2 stock-capture reference (already in the repo)
+
+- `reference/android-capture/devicetest-main.log` — mtkcam HAL trace: SeninfDrvImp /
+  SensorHal setTgPhase, setTg1PhaseCounter, initTg1CSI2 calibration, grab-range config.
+- `reference/android-capture/devicetest-kernel.log` — kernel-side SP2509 driver:
+  successful `Read Sensor ID = 0x2509`, GetResolution/GetInfo, `Camera-ISP mmap_kmem`.
+- `docs/22-camera-sensor-reference.md` — the sensor reference distilled from these.
 
 ## Key kernel-source references
 
