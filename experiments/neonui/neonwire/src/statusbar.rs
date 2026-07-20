@@ -40,7 +40,12 @@ pub fn draw(c: &mut Canvas, snap: &Snapshot, app_title: &str, accent: u32, hits:
 
     let up = format!("{:02}:{:02}", snap.uptime_s / 3600, (snap.uptime_s % 3600) / 60);
     seg(c, &mut x, "UP", &up, TEXT2);
-    seg(c, &mut x, "LOAD", &snap.load1, TEXT2);
+    let (cpuv, cpuc) = match snap.cpu_pct {
+        Some(p) if p >= 80 => (format!("{p}%"), AMBER),
+        Some(p) => (format!("{p}%"), TEXT2),
+        None => ("--".into(), TEXT_DIM),
+    };
+    seg(c, &mut x, "CPU", &cpuv, cpuc);
     let memv = if snap.mem_total_kb > 0 {
         format!("{}%", (snap.mem_total_kb - snap.mem_avail_kb) * 100 / snap.mem_total_kb)
     } else {

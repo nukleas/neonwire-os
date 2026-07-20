@@ -10,6 +10,7 @@ pub struct Snapshot {
     pub cpus: i32,
     pub uptime_s: u64,
     pub load1: String,
+    pub cpu_pct: Option<i32>, // real busy% from /proc/stat deltas
     pub mem_total_kb: i64,
     pub mem_avail_kb: i64,
     pub batt_pct: Option<i32>,
@@ -28,6 +29,7 @@ impl Default for Snapshot {
             cpus: 0,
             uptime_s: 0,
             load1: "-".into(),
+            cpu_pct: None,
             mem_total_kb: 0,
             mem_avail_kb: 0,
             batt_pct: None,
@@ -44,6 +46,7 @@ pub struct Collectors {
     batt_path: Option<String>,
     last_fast: Option<Instant>,
     last_slow: Option<Instant>,
+    prev_cpu: Option<(u64, u64)>, // (total, idle) jiffies from /proc/stat
 }
 
 impl Collectors {
@@ -70,9 +73,29 @@ impl Collectors {
                 })
             })
             .map(|p| p.to_string_lossy().into_owned());
-        let mut c = Collectors { snap, batt_path, last_fast: None, last_slow: None };
+        let mut c =
+            Collectors { snap, batt_path, last_fast: None, last_slow: None, prev_cpu: None };
         c.refresh();
         c
+    }
+
+    /// Busy% across all cores from /proc/stat, as a delta since the last read.
+    fn cpu_pct(&mut self) -> Option<i32> {
+        let stat = std::fs::read_to_string("/proc/stat").ok()?;
+        let line = stat.lines().next()?; // "cpu  user nice system idle iowait irq softirq steal"
+        let v: Vec<u64> = line.split_whitespace().skip(1).filter_map(|f| f.parse().ok()).collect();
+        if v.len() < 4 {
+            return None;
+        }
+        let total: u64 = v.iter().sum();
+        let idle = v[3] + v.get(4).copied().unwrap_or(0); // idle + iowait
+        let pct = self.prev_cpu.and_then(|(pt, pi)| {
+            let dt = total.checked_sub(pt)?;
+            let di = idle.checked_sub(pi)?;
+            (dt > 0).then(|| (((dt - di) * 100 / dt) as i32).clamp(0, 100))
+        });
+        self.prev_cpu = Some((total, idle));
+        pct
     }
 
     /// Call every tick; internally rate-limits (fast: 1 s, slow: 10 s).
@@ -89,7 +112,9 @@ impl Collectors {
     }
 
     fn fast(&mut self) {
+        let cpu = self.cpu_pct();
         let s = &mut self.snap;
+        s.cpu_pct = cpu;
         if let Ok(up) = std::fs::read_to_string("/proc/uptime") {
             s.uptime_s = up.split('.').next().and_then(|v| v.parse().ok()).unwrap_or(0);
         }

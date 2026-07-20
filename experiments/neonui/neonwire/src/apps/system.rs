@@ -248,7 +248,9 @@ impl App for SystemApp {
                 row(c, "HOST", &s.host, TEXT);
                 row(c, "KERNEL", &s.kernel, TEXT);
                 row(c, "ARCH", &s.machine, TEXT);
-                row(c, "CPU", &format!("{} cores", s.cpus), TEXT);
+                let cpu = s.cpu_pct.map(|p| format!("{} cores  {}% busy", s.cpus, p))
+                    .unwrap_or_else(|| format!("{} cores", s.cpus));
+                row(c, "CPU", &cpu, TEXT);
                 let up = format!(
                     "{}h {:02}m {:02}s",
                     s.uptime_s / 3600,
@@ -256,7 +258,8 @@ impl App for SystemApp {
                     s.uptime_s % 60
                 );
                 row(c, "UPTIME", &up, GREEN);
-                row(c, "LOAD", &s.load1, TEXT2);
+                // loadavg on this kernel is inflated by vendor D-state kthreads; label it
+                row(c, "LOADAVG", &format!("{} (raw)", s.load1), TEXT_DIM);
                 let used = s.mem_total_kb - s.mem_avail_kb;
                 row(c, "MEM", &format!("{} / {} MB", used / 1024, s.mem_total_kb / 1024), TEXT2);
                 let pct = if s.mem_total_kb > 0 { (used * 100 / s.mem_total_kb) as i32 } else { 0 };
