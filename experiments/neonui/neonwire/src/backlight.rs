@@ -56,4 +56,11 @@ impl Backlight {
     pub fn is_blanked(&self) -> bool {
         self.blanked
     }
+
+    /// Force the panel on (e.g. to show a critical warning regardless of idle).
+    pub fn wake(&mut self) {
+        self.last_activity = Instant::now();
+        self.blanked = false;
+        self.set(AWAKE);
+    }
 }

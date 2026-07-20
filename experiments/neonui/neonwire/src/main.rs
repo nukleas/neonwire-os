@@ -8,6 +8,7 @@ mod apps;
 mod audio;
 mod backlight;
 mod collectors;
+mod power;
 mod shell;
 mod statusbar;
 mod widgets;
@@ -28,8 +29,34 @@ fn main() {
         Some("--evdump") => probe_touch(&args, true),
         Some("--tone") => tone(),
         Some("--wpa-probe") => wpa_probe(),
+        Some("--power-test") => power_test(),
         _ => run_shell(&args),
     }
+}
+
+/// Dry-run the battery state machine (no actual poweroff) to prove thresholds.
+fn power_test() {
+    use power::{PowerMgr, PowerState};
+    let name = |s: PowerState| match s {
+        PowerState::Ok => "OK",
+        PowerState::Low => "LOW(warn)",
+        PowerState::Shutdown => "SHUTDOWN",
+    };
+    let mut pm = PowerMgr::new();
+    // (pct, charging) sequence exercising the debounce + charging guard
+    let seq = [
+        (Some(80), false),
+        (Some(15), false),
+        (Some(12), true), // charging clears the warning
+        (Some(3), true),  // critical but charging -> no shutdown
+        (Some(3), false), // 1st critical read -> LOW
+        (Some(3), false), // 2nd -> SHUTDOWN
+        (Some(50), false),
+    ];
+    for (pct, chg) in seq {
+        println!("pct={:?} charging={} -> {}", pct, chg, name(pm.update(pct, chg)));
+    }
+    println!("POWER-TEST DONE (thresholds: LOW<=15, CRIT<=3, 2 confirms, charging clears)");
 }
 
 /// M6a verification: exercise the wpa ctrl client headlessly over SSH.

@@ -16,6 +16,7 @@ use crate::apps::home::{Home, TILES};
 use crate::apps::{App, Ctx, HitMap};
 use crate::backlight::Backlight;
 use crate::collectors::Collectors;
+use crate::power::{self, PowerMgr, PowerState};
 use crate::statusbar::{self, BAR_H, HIT_HOME};
 
 enum Screen {
@@ -33,6 +34,8 @@ pub struct Shell {
     collectors: Collectors,
     toast: Option<(String, Instant)>,
     backlight: Backlight,
+    power: PowerMgr,
+    power_state: PowerState,
     dirty: bool,
 }
 
@@ -53,6 +56,8 @@ impl Shell {
             collectors: Collectors::new(),
             toast: None,
             backlight: Backlight::new(),
+            power: PowerMgr::new(),
+            power_state: PowerState::Ok,
             dirty: true,
         }
     }
@@ -81,6 +86,17 @@ impl Shell {
                 app.draw(&mut c, area, &mut self.hits, &ctx);
             }
         }
+        // low-battery warning banner (top, under status bar)
+        if self.power_state == PowerState::Low {
+            let pct = self.collectors.snap.batt_pct.unwrap_or(0);
+            let msg = format!("LOW BATTERY {pct}% — CONNECT CHARGER", pct = pct);
+            let w = c.w;
+            let bw = msg.len() as i32 * 11 + 40;
+            let x = (w - bw) / 2;
+            c.fill(x, BAR_H + 4, bw, 30, neon_gfx::canvas::mix(BG, RED, 60));
+            c.neonbox(x, BAR_H + 4, bw, 30, RED);
+            c.text(x + 20, BAR_H + 11, &msg, RED, 1);
+        }
         // toast (bottom center, 3 s)
         if let Some((msg, at)) = &self.toast {
             if at.elapsed() < Duration::from_secs(3) {
@@ -93,6 +109,19 @@ impl Shell {
                 c.text(x + 20, y + 6, msg, AMBER, 1);
             }
         }
+        c.scanlines(0, 0, c.w, c.h);
+        self.fb.present();
+    }
+
+    /// Final frame before a critical-battery power-off.
+    fn draw_shutdown(&mut self) {
+        let pct = self.collectors.snap.batt_pct.unwrap_or(0);
+        let mut c = self.fb.canvas();
+        c.background();
+        let (cx, cy) = (c.w / 2, c.h / 2);
+        c.textg(cx - 11 * 9, cy - 40, "BATTERY CRITICAL", RED, 2);
+        c.text(cx - 15 * 6, cy + 6, &format!("{pct}% — SHUTTING DOWN SAFELY", pct = pct), TEXT, 1);
+        c.text(cx - 13 * 6, cy + 30, "flushing disks + poweroff", TEXT_DIM, 1);
         c.scanlines(0, 0, c.w, c.h);
         self.fb.present();
     }
@@ -160,6 +189,14 @@ impl Shell {
             if last_tick.elapsed().as_millis() as u64 >= tick_ms {
                 last_tick = Instant::now();
                 self.collectors.refresh();
+                // battery management
+                let snap = &self.collectors.snap;
+                self.power_state = self.power.update(snap.batt_pct, snap.batt_charging);
+                if self.power_state == PowerState::Shutdown {
+                    self.backlight.wake();
+                    self.draw_shutdown();
+                    power::power_off(); // does not return
+                }
                 if let Screen::App(i) = self.screen {
                     let snap = &self.collectors.snap;
                     let mut ctx = Ctx { snap, toast: &mut self.toast };
