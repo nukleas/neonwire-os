@@ -157,6 +157,9 @@ static void csi2_analog(void)
     rw(0xC038, rr(0xC038) & 0xFFFFFFFEu);
     A(0x20) |= 0x02;
     rw(R_CSI2_LNMUX, 0xE4u);
+    /* readback: do writes to the analog block actually stick? (power domain check) */
+    fprintf(stderr, "  analog readback: [0x00]=0x%08x [0x20]=0x%08x [0x24]=0x%08x [0x48]=0x%08x\n",
+            A(0x00), A(0x20), A(0x24), A(0x48));
 #undef A
     munmap(m, 0x1000);
 }
