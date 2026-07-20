@@ -1,0 +1,13 @@
+[build]
+target = "armv7-unknown-linux-musleabihf"
+
+[target.armv7-unknown-linux-musleabihf]
+# The project's musl cross-GCC is only the link driver; rustc bundles its own musl libc.
+linker = "armv7l-linux-musleabihf-gcc"
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  # Match the C binaries' -no-pie: safest on the 3.18 loader.
+  "-C", "relocation-model=static",
+  "-C", "link-arg=-no-pie",
+  "-C", "target-cpu=cortex-a7",
+]

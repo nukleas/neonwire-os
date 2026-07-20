@@ -1,0 +1,13 @@
+[package]
+name = "neonwire"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neon-gfx = { path = "../neon-gfx" }
+libc = { workspace = true }
+strudel-core = { workspace = true, optional = true }
+strudel-dsp = { workspace = true, optional = true }
+
+[features]
+music = ["dep:strudel-core", "dep:strudel-dsp"]

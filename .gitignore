@@ -67,3 +67,7 @@ zImage*
 .DS_Store
 *~
 *.swp
+
+# --- rust workspace build artifacts ---
+experiments/neonui/target/
+experiments/camera/camprobe

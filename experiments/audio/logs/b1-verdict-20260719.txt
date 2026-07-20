@@ -1,0 +1,17 @@
+** WARNING: connection is not using a post-quantum key exchange algorithm.
+** This session may be vulnerable to "store now, decrypt later" attacks.
+** The server may need to be upgraded. See https://openssh.com/pq.html
+Simple mixer control 'Speaker_Amp_Switch',0
+  Capabilities: enum
+  Items: 'Off' 'On'
+  Item0: 'On'
+  Items: 'MUTE' '0Db' '4Db' '5Db' '6Db' '7Db' '8Db' '9Db' '10Db' '11Db' '12Db' '13Db' '14Db' '15Db' '16Db' '17Db'
+  Item0: '14Db'
+[ 1776.986483] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1776.988521] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1776.990565] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1776.992605] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1776.994645] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1776.996684] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1776.998726] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
+[ 1787.462632] -(0)[0:swapper/0]afe_dl1_interrupt_handler underflow
