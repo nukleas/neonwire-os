@@ -25,7 +25,14 @@ echo
 $CLI status | grep -E "wpa_state|ssid|bssid|freq"
 $CLI status | grep -q wpa_state=COMPLETED || { echo "*** did not associate"; exit 1; }
 
-udhcpc -i wlan0 -n -q -s "$LAB/udhcpc.script" || { echo "*** DHCP failed"; exit 1; }
+# request our previous lease so the IP stays stable across boots (the server
+# usually honours -r). udhcpc.script saves each obtained IP to $LAB/.last_ip.
+LAST=$(cat "$LAB/.last_ip" 2>/dev/null)
+ROPT=""; [ -n "$LAST" ] && ROPT="-r $LAST"
+udhcpc -i wlan0 $ROPT -n -q -s "$LAB/udhcpc.script" || {
+  # a stale reservation can be refused; retry once without the hint
+  [ -n "$ROPT" ] && udhcpc -i wlan0 -n -q -s "$LAB/udhcpc.script"
+} || { echo "*** DHCP failed"; exit 1; }
 
 # wireless cockpit: SSH over the LAN, no USB needed (dropbear, pubkey auth).
 # ssh-up.sh mounts devpts (needed for ptys), installs authorized_keys, starts dropbear.

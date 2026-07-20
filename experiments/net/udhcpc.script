@@ -10,6 +10,7 @@ case "$1" in
     fi
     : > /etc/resolv.conf
     for d in $dns; do echo "nameserver $d" >> /etc/resolv.conf; done
+    echo "$ip" > /mnt/sd/linux-lab/.last_ip 2>/dev/null   # persist for -r on next boot
     echo "udhcpc: $interface -> $ip (gw: $router dns: $dns)"
     ;;
 esac
