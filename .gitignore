@@ -1,0 +1,69 @@
+# =============================================================================
+#  DL7006 / NEONWIRE OS  —  clean source repo
+#  Track: C/H source, shell + python tooling, docs, configs.
+#  Ignore: compiled binaries, gzipped push blobs, huge reference dumps,
+#          upstream kernel clones, firmware blobs, venvs. See README.
+# =============================================================================
+
+# --- large reference material (not "the OS"; keep locally, too big to sync) ---
+reference/dumps/
+reference/upstream/
+reference/firmware/
+reference/apks/
+reference/blobs/
+# keep the small, high-value captures: reference/android-capture/, reference/probe/
+
+# --- python / external tools ---
+tools/venv/
+tools/mtkclient/
+__pycache__/
+*.pyc
+.Python
+
+# --- build artifact dirs (regenerated) ---
+experiments/linux-initramfs/
+experiments/alpine/*.tar
+experiments/alpine/*.tar.gz
+experiments/consys-pwr/*.img
+experiments/consys-pwr/*.bin
+experiments/consys-pwr/kbuild-amazon/
+experiments/**/out/*.img
+
+# --- compiled kernel-module objects (keep the .c source) ---
+*.ko
+*.o
+*.mod
+*.mod.c
+*.mod.o
+.*.cmd
+modules.order
+Module.symvers
+
+# --- gzipped serial/network push blobs (regenerated from source) ---
+*.gz
+
+# --- generated headers ---
+experiments/fbui/font_neon.h
+
+# --- compiled ELF binaries (no extension; list explicitly) ---
+experiments/fbui/neofb
+experiments/fbui/neui
+experiments/net/wmtctl
+experiments/net/wmtctl2
+experiments/net/wmtctl_min
+experiments/net/wpas
+experiments/net/wpa_cli
+experiments/net/dropbearmulti
+
+# --- disk images / raw dumps / kernel + dtb build artifacts anywhere ---
+*.img
+*.bin
+*.raw
+*.dtb
+zImage*
+*.patched
+
+# --- OS junk ---
+.DS_Store
+*~
+*.swp

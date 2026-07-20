@@ -1,0 +1,322 @@
+<title>NEONWIRE OS — Field Dossier</title>
+<style>
+/* ============================================================
+   NEONWIRE OS // Field Dossier
+   Committed single-theme neon-CRT world (deliberate — this is a
+   terminal OS's own readout, not a document that should invert).
+   Palette = the OS's cyberdesign tokens. Face = JetBrains Mono.
+   ============================================================ */
+@font-face{
+  font-family:"JBMono";font-style:normal;font-weight:400;font-display:swap;
+  src:url("%%FONT_REG%%") format("woff");
+}
+@font-face{
+  font-family:"JBMono";font-style:normal;font-weight:700;font-display:swap;
+  src:url("%%FONT_BOLD%%") format("woff");
+}
+:root{
+  color-scheme:dark;
+  --bg:#05060a; --bg2:#0b0f18; --panel:#0b0f18; --border:#26324c;
+  --cyan:#47f6ff; --cyanhi:#bdffff; --magenta:#ff2bd6; --green:#52ff9f;
+  --amber:#ffaa00; --purple:#9d7cff;
+  --text:#e8e4e0; --text2:#a7b7d6; --dim:#6a625c;
+  --maxw:940px;
+  --glow-cyan:0 0 6px rgba(71,246,255,.55),0 0 18px rgba(71,246,255,.25);
+  --glow-mag:0 0 6px rgba(255,43,214,.55),0 0 18px rgba(255,43,214,.22);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:
+    radial-gradient(1200px 520px at 50% -8%,rgba(71,246,255,.08),transparent 60%),
+    radial-gradient(900px 500px at 88% 8%,rgba(255,43,214,.06),transparent 55%),
+    var(--bg);
+  color:var(--text);
+  font-family:"JBMono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:15px;line-height:1.62;letter-spacing:.01em;
+  -webkit-font-smoothing:antialiased;
+}
+/* faint CRT scanline wash over the whole page */
+.scan{position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);
+  mix-blend-mode:multiply;opacity:.5}
+.sweep{position:fixed;left:0;right:0;height:180px;pointer-events:none;z-index:51;
+  background:linear-gradient(180deg,transparent,rgba(71,246,255,.05),transparent);
+  animation:sweep 9s linear infinite}
+@keyframes sweep{0%{transform:translateY(-200px)}100%{transform:translateY(100vh)}}
+
+.wrap{max-width:var(--maxw);margin:0 auto;padding:34px 22px 90px;position:relative}
+
+/* outer bracket frame */
+.frame{position:relative;border:1px solid var(--border);padding:clamp(20px,4vw,44px);
+  background:linear-gradient(180deg,rgba(11,15,24,.35),rgba(5,6,10,.15))}
+.frame::before,.frame::after{content:"";position:absolute;width:30px;height:30px;pointer-events:none}
+.frame::before{top:-1px;left:-1px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan)}
+.frame::after{bottom:-1px;right:-1px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+.frame>.tr,.frame>.bl{position:absolute;width:30px;height:30px;pointer-events:none}
+.frame>.tr{top:-1px;right:-1px;border-top:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+.frame>.bl{bottom:-1px;left:-1px;border-bottom:2px solid var(--cyan);border-left:2px solid var(--cyan)}
+
+/* ---- type ---- */
+.eyebrow{font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--dim);
+  display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.eyebrow b{color:var(--cyan);font-weight:400}
+h1{font-weight:700;letter-spacing:.02em;line-height:.98;text-wrap:balance;
+  font-size:clamp(46px,10.5vw,104px);margin:16px 0 6px}
+h1 .os{color:var(--cyan);text-shadow:var(--glow-cyan);animation:pulse 3.4s ease-in-out infinite}
+h1 .sfx{color:var(--magenta);text-shadow:var(--glow-mag)}
+@keyframes pulse{0%,100%{text-shadow:0 0 6px rgba(71,246,255,.45),0 0 18px rgba(71,246,255,.2)}
+  50%{text-shadow:0 0 10px rgba(71,246,255,.75),0 0 30px rgba(71,246,255,.4)}}
+.tagline{font-size:clamp(15px,2.4vw,19px);color:var(--text2);max-width:60ch;margin:0 0 22px}
+.tagline .m{color:var(--magenta)}
+
+h2{font-size:13px;letter-spacing:.24em;text-transform:uppercase;color:var(--cyan);
+  margin:0 0 2px;display:flex;align-items:center;gap:10px}
+h2::before{content:"▸";color:var(--magenta);font-size:12px}
+.lead{color:var(--text2);max-width:66ch}
+p{max-width:66ch}
+a{color:var(--cyan);text-decoration:none;border-bottom:1px dotted rgba(71,246,255,.4)}
+a:hover{color:var(--cyanhi)}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+strong{color:var(--text);font-weight:700}
+code,.mono{font-family:inherit;color:var(--cyanhi);background:rgba(71,246,255,.08);
+  border:1px solid rgba(71,246,255,.16);padding:.06em .4em;border-radius:3px;font-size:.92em}
+
+/* ---- boot log intro ---- */
+.bootlog{margin:22px 0 10px;font-size:13.5px;color:var(--text2);border-left:2px solid var(--border);padding-left:16px}
+.bootlog div{opacity:0;animation:boot .5s ease forwards}
+.bootlog .ok{color:var(--green)}
+.bootlog .warn{color:var(--magenta)}
+.bootlog b{color:var(--cyan);font-weight:400}
+@keyframes boot{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+
+/* ---- sections / panels ---- */
+section{margin-top:46px}
+.panel{position:relative;background:var(--panel);border:1px solid var(--border);
+  padding:22px 22px 22px;margin-top:14px}
+.panel::before{content:"";position:absolute;top:-1px;left:-1px;width:16px;height:16px;
+  border-top:2px solid var(--accent,var(--cyan));border-left:2px solid var(--accent,var(--cyan))}
+.panel::after{content:"";position:absolute;bottom:-1px;right:-1px;width:16px;height:16px;
+  border-bottom:2px solid var(--accent,var(--cyan));border-right:2px solid var(--accent,var(--cyan))}
+.panel.mag{--accent:var(--magenta)} .panel.grn{--accent:var(--green)} .panel.amb{--accent:var(--amber)}
+.ptag{position:absolute;top:-10px;left:18px;background:var(--panel);padding:0 10px;
+  font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent,var(--cyan))}
+
+/* ---- spec table ---- */
+.spec{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);
+  border:1px solid var(--border)}
+.spec>div{background:var(--panel);padding:11px 15px;display:flex;justify-content:space-between;gap:14px}
+.spec dt,.spec .k{color:var(--dim);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.spec .v{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+.spec .v b{color:var(--cyan);font-weight:400}
+@media(max-width:560px){.spec{grid-template-columns:1fr}}
+
+/* ---- timeline ---- */
+.tl{margin-top:8px;position:relative;padding-left:26px}
+.tl::before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:1px;
+  background:linear-gradient(180deg,var(--cyan),var(--magenta))}
+.phase{position:relative;margin-top:20px}
+.phase>.dot{position:absolute;left:-26px;top:5px;width:13px;height:13px;border-radius:50%;
+  background:var(--bg);border:2px solid var(--accent,var(--cyan));box-shadow:0 0 10px var(--accent,var(--cyan))}
+.phase .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.phase .tag{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent,var(--cyan));
+  border:1px solid var(--accent,var(--cyan));padding:2px 8px;border-radius:2px}
+.phase h3{margin:0;font-size:18px;font-weight:700;color:var(--text);letter-spacing:.01em}
+.phase p{margin:8px 0 0;color:var(--text2);font-size:14.5px}
+.phase.a{--accent:var(--cyan)} .phase.b{--accent:var(--purple)} .phase.c{--accent:var(--green)}
+.phase.d{--accent:var(--amber)} .phase.e{--accent:var(--magenta)}
+
+/* ---- status chips ---- */
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;padding:3px 10px;border-radius:2px;border:1px solid currentColor;white-space:nowrap}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.chip.done{color:var(--green)} .chip.off{color:var(--magenta)} .chip.warn{color:var(--amber)}
+
+/* ---- screen figures ---- */
+figure{margin:16px 0 0}
+.screen{position:relative;border:1px solid var(--border);background:#000;overflow:hidden;
+  box-shadow:0 0 0 1px rgba(71,246,255,.06),0 24px 60px -30px rgba(71,246,255,.35)}
+.screen img{display:block;width:100%;height:auto}
+.screen::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);opacity:.35}
+figcaption{margin-top:9px;font-size:12.5px;color:var(--dim);letter-spacing:.04em}
+figcaption b{color:var(--cyan);font-weight:400}
+.gal{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:640px){.gal{grid-template-columns:1fr}}
+
+.hero-shot{margin:26px 0 8px}
+.hero-shot .screen{box-shadow:0 0 0 1px rgba(71,246,255,.1),0 40px 90px -40px rgba(71,246,255,.5)}
+
+/* ---- bug / stack lists ---- */
+.rows{display:flex;flex-direction:column;gap:14px;margin-top:4px}
+.row{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:start}
+.row .lab{color:var(--amber);font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
+.row.b .lab{color:var(--magenta)} .row.c .lab{color:var(--cyan)}
+.row p{margin:0;color:var(--text2);font-size:14px}
+@media(max-width:560px){.row{grid-template-columns:1fr;gap:4px}}
+
+.stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.stack span{font-size:12.5px;color:var(--text2);border:1px solid var(--border);
+  padding:5px 11px;border-radius:2px;background:rgba(71,246,255,.03)}
+.stack span b{color:var(--cyan);font-weight:400}
+
+/* ---- footer ---- */
+footer{margin-top:56px;border-top:1px solid var(--border);padding-top:20px;
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+footer b{color:var(--cyan);font-weight:400}
+
+/* reveal on scroll */
+.reveal{opacity:0;transform:translateY(14px)}
+.reveal.in{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important}
+  .reveal{opacity:1;transform:none}
+  .bootlog div{opacity:1}
+}
+</style>
+
+<div class="scan"></div>
+<div class="sweep" aria-hidden="true"></div>
+
+<div class="wrap">
+<main class="frame">
+<span class="tr"></span><span class="bl"></span>
+
+<header>
+  <div class="eyebrow"><span>Field Dossier</span><b>MEDIATEK MT8127</b><span>REV 2026&#8209;07&#8209;19</span></div>
+  <h1>NEON<span class="os">WIRE</span> <span class="sfx">OS</span></h1>
+  <p class="tagline">A self-built <span class="m">cyberpunk operating system</span>, hand-brought-up on an undocumented $40 white-label Android tablet — from raw eMMC to a touch UI that boots from its own neon splash.</p>
+
+  <div class="bootlog" aria-hidden="true">
+    <div style="animation-delay:.15s">&gt; preloader <b>MT8127</b> ... unprotected <span class="ok">OK</span></div>
+    <div style="animation-delay:.45s">&gt; own flash ... own boot ... <span class="ok">OK</span></div>
+    <div style="animation-delay:.75s">&gt; kernel <b>3.18.35</b> + busybox + usb-acm shell ... <span class="ok">OK</span></div>
+    <div style="animation-delay:1.05s">&gt; framebuffer UI // touch // autostart ... <span class="ok">OK</span></div>
+    <div style="animation-delay:1.35s">&gt; wifi // consys power ... <span class="warn">BLOCKED</span></div>
+    <div style="animation-delay:1.65s">&gt; booting neon subsystems ..._</div>
+  </div>
+</header>
+
+<div class="hero-shot reveal">
+  <figure><div class="screen"><img src="%%IMG_SPLASH%%" alt="NEONWIRE boot splash on the tablet: glowing wordmark, DL-7006, booting neon subsystems"></div>
+  <figcaption>The pre-kernel boot splash — <b>flashed into the bootloader's logo partition</b>, replacing the vendor's. First frame on power-on.</figcaption></figure>
+</div>
+
+<section class="reveal">
+  <h2>What this is</h2>
+  <p class="lead">The <strong>DigiLand DL7006-KB</strong> is a throwaway 7&#8209;inch tablet built around a MediaTek <strong>MT8127</strong>. No source, no support, locked into a stale Android 7. Its one weakness: an <strong>unprotected bootloader</strong>. That crack was enough to take the whole device — dump it, boot our own Linux on it, and give it a face. The result, <strong>NEONWIRE OS</strong>, is a neon framebuffer UI drawn straight to the panel by a handful of static ARM binaries — no X, no Android, no toolkit — deployed over a single serial cable.</p>
+</section>
+
+<section class="reveal">
+  <h2>The hardware</h2>
+  <div class="panel"><span class="ptag">Device</span>
+  <div class="spec">
+    <div><span class="k">Model</span><span class="v"><b>DigiLand DL7006-KB</b></span></div>
+    <div><span class="k">SoC</span><span class="v">MediaTek <b>MT8127</b></span></div>
+    <div><span class="k">CPU / GPU</span><span class="v">4&#215; Cortex&#8209;A7 · Mali&#8209;450</span></div>
+    <div><span class="k">RAM / eMMC</span><span class="v">1 GiB · 7.1 GiB</span></div>
+    <div><span class="k">Panel</span><span class="v">ZS070BE3019B3H7II · <b>1024&#215;600</b></span></div>
+    <div><span class="k">Panel mode</span><span class="v">32bpp · command&#8209;mode MIPI</span></div>
+    <div><span class="k">Touch</span><span class="v">ICN85xx · type&#8209;A multitouch</span></div>
+    <div><span class="k">Bootloader</span><span class="v"><b>unprotected</b> preloader</span></div>
+  </div></div>
+</section>
+
+<section class="reveal">
+  <h2>How it was taken — five phases</h2>
+  <div class="tl">
+
+    <div class="phase a"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase A</span><h3>Own the flash</h3><span class="chip done">Done</span></div>
+      <p>Attached the unprotected preloader with <span class="mono">mtkclient</span> and dumped the full 7.1&#8209;GiB eMMC — a complete, hash-verified backup and a guaranteed way back from any mistake. Nothing after this is irreversible.</p>
+    </div>
+
+    <div class="phase b"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase B</span><h3>Own the boot</h3><span class="chip done">Done</span></div>
+      <p>Unpacked the MTK boot / recovery / LK images, mapped every partition offset, and built custom boot images — ADB-unlocked, setup-wizard removed. We now controlled what ran at startup.</p>
+    </div>
+
+    <div class="phase c"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase C</span><h3>Self-built Linux</h3><span class="chip done">Done</span></div>
+      <p>Wrapped the stock <strong>3.18.35</strong> kernel around our own busybox initramfs and a USB&#8209;ACM gadget — a real <strong>root shell over serial</strong>, eMMC + SD mounts, and a writable framebuffer. A minimal Linux we own, top to bottom.</p>
+    </div>
+
+    <div class="phase d"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase D</span><h3>Give it a face</h3><span class="chip done">Done</span></div>
+      <p>A from-scratch framebuffer engine (<span class="mono">fbgfx</span>) with a baked JetBrains&#8209;Mono bitmap font, neon glow, panels and CRT scanlines. Two programs: <strong>neofb</strong>, a system dashboard, and <strong>neui</strong>, a touch launcher with five live panels and a working action bar — all reading real kernel state, cross-compiled static and streamed over serial to the SD card in ~2&#8239;seconds. No reflash to iterate.</p>
+    </div>
+
+    <div class="phase e"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase E</span><h3>Make it the OS</h3><span class="chip done">Done</span></div>
+      <p>Embedded the UI in the initramfs so <strong>init launches it at boot</strong> — the device now comes up straight into NeonOS. Then reverse-engineered the MTK <span class="mono">logo.bin</span> format and flashed a neon boot splash over the vendor's. The <strong>entire boot chain, first frame to live OS, is ours.</strong></p>
+    </div>
+
+  </div>
+</section>
+
+<section class="reveal">
+  <h2>The face — captured from the panel</h2>
+  <p class="lead">Every pixel below is a real screenshot pulled back off the tablet's framebuffer over the serial link, not a mockup.</p>
+  <div class="gal" style="margin-top:16px">
+    <figure><div class="screen"><img src="%%IMG_DASH%%" alt="neofb dashboard: system + subsystems panels"></div>
+      <figcaption><b>neofb</b> — the system dashboard. Live kernel, cpu, uptime, memory meter, honest subsystem status.</figcaption></figure>
+    <figure><div class="screen"><img src="%%IMG_LAUNCHER%%" alt="neui launcher: nav rail, process list, action bar"></div>
+      <figcaption><b>neui</b> — touch launcher. Nav rail, a live process table, and the SYNC / CLR&#8239;LOG / REMOUNT / REBOOT action bar.</figcaption></figure>
+    <figure><div class="screen"><img src="%%IMG_KERNLOG%%" alt="kernel log panel streaming dmesg"></div>
+      <figcaption><b>KERNLOG</b> — the kernel ring buffer via <span class="mono">klogctl</span>, live. It even catches its own USB traffic.</figcaption></figure>
+    <figure><div class="screen"><img src="%%IMG_NET%%" alt="network panel showing wlan0 offline"></div>
+      <figcaption><b>NETWORK</b> — real interfaces, and an honest <span style="color:var(--magenta)">wlan0 OFFLINE</span>. The UI never lies about the one wall.</figcaption></figure>
+  </div>
+  <figure style="margin-top:18px"><div class="screen"><img src="%%IMG_CONFIRM%%" alt="reboot confirm state with toast"></div>
+    <figcaption>Touch, decoded from a type&#8209;A multitouch driver and mapped 1:1 to the panel — here arming the confirm-guarded <b>REBOOT</b> tile.</figcaption></figure>
+</section>
+
+<section class="reveal">
+  <h2>Two hardware ghosts we exorcised</h2>
+  <div class="panel amb"><span class="ptag">War stories</span>
+  <div class="rows">
+    <div class="row b"><div class="lab">Dead touch</div><p>Taps registered internally but nothing moved. The panel is a <strong>type-A multitouch</strong> device reporting <span class="mono">ABS_MT_POSITION</span> frames — my release-latch stuck after the first touch. Fix: fire on the <span class="mono">BTN_TOUCH</span> press edge, commit on the next <span class="mono">SYN_REPORT</span>.</p></div>
+    <div class="row c"><div class="lab">Frozen glass</div><p>The UI updated in memory but the screen sat still. The LCM is a <strong>command-mode MIPI panel</strong> — it only pushes a frame on a pan/flip, never on a plain <span class="mono">memcpy</span>. Fix: cycle three hardware buffers and <span class="mono">FBIOPAN_DISPLAY</span> every frame. (It's also why memory screenshots looked live while the panel was frozen.)</p></div>
+  </div></div>
+</section>
+
+<section class="reveal">
+  <h2>The wall we haven't broken</h2>
+  <div class="panel mag"><span class="ptag">Honest status</span>
+  <p style="margin-top:2px">Wi-Fi. The integrated <strong>CONSYS</strong> connectivity block won't power on: chip ID reads zero, its rails and bus clock never come up. The stock kernel ships with <span class="mono">CONFIG_MODULES=n</span> (no driver can be loaded) and there are no board sources to rebuild one; a binary power-on patch bootlooped the device. So NeonOS is, for now, gloriously offline — and it says so, in magenta, on its own network panel. <span class="chip off" style="margin-left:6px">wlan0 offline</span></p>
+  </div>
+</section>
+
+<section class="reveal">
+  <h2>The stack</h2>
+  <div class="stack">
+    <span><b>mtkclient</b> · preloader dump &amp; flash</span>
+    <span><b>musl</b> armv7 cross-toolchain</span>
+    <span>static <b>ARM</b> binaries · no libc bloat</span>
+    <span><b>JetBrains Mono</b> baked to a bitmap font</span>
+    <span>serial <b>base64</b> transport → SD</span>
+    <span><b>fbgfx</b> framebuffer engine</span>
+    <span><b>klogctl</b> · statvfs · /proc</span>
+    <span><b>PIL</b> + <b>zlib</b> · MTK logo.bin</span>
+    <span>busybox initramfs · MTK boot framing</span>
+  </div>
+</section>
+
+<footer>
+  <span>NEONWIRE OS · <b>DL-7006</b> · MT8127</span>
+  <span>own flash → own boot → <b>own the whole thing</b></span>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function(){
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}})
+  },{threshold:.12,rootMargin:"0px 0px -8% 0px"});
+  document.querySelectorAll(".reveal").forEach(function(el){io.observe(el)});
+})();
+</script>
