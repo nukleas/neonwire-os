@@ -345,15 +345,11 @@ fn m0_probe() {
     }
 
     // 6. strudel spike — proves the edition-2024 path deps cross-compile and run.
-    #[cfg(feature = "music")]
     strudel_spike();
-    #[cfg(not(feature = "music"))]
-    println!("strudel: (build without --features music)");
 
     println!("M0 DONE");
 }
 
-#[cfg(feature = "music")]
 fn strudel_spike() {
     use strudel_core::{fastcat, pure};
     let pat = fastcat(vec![

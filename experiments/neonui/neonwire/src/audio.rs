@@ -221,17 +221,73 @@ pub fn speaker_amp(on: bool) {
         .spawn();
 }
 
-// ---- sequencer audio engine ----
+// ---- sequencer audio engine (strudel-core pattern scheduler, B3) ----
+
+use strudel_core::{Fraction, Pattern};
 
 pub const STEPS: usize = 16;
 pub const TRACKS: usize = 4;
+pub const TRACK_SOUNDS: [&str; TRACKS] = ["bd", "sd", "hh", "cp"];
+
+/// Map a strudel sound name onto one of our synthesized drum voices.
+fn sound_to_track(name: &str) -> Option<usize> {
+    match name {
+        "bd" | "sbd" | "kick" => Some(0),
+        "sd" | "snare" | "rim" => Some(1),
+        "hh" | "oh" | "hat" => Some(2),
+        "cp" | "clap" => Some(3),
+        _ => None,
+    }
+}
+
+/// Build a Pattern from the 16-step grid: per track a fastcat of pure/silence,
+/// stacked — the grid is just another strudel pattern.
+pub fn grid_pattern(grid: &[[bool; STEPS]; TRACKS]) -> Pattern {
+    let tracks: Vec<Pattern> = grid
+        .iter()
+        .enumerate()
+        .map(|(t, row)| {
+            let cells: Vec<Pattern> = row
+                .iter()
+                .map(|&on| {
+                    if on {
+                        strudel_core::pure(TRACK_SOUNDS[t].into())
+                    } else {
+                        strudel_core::silence()
+                    }
+                })
+                .collect();
+            strudel_core::fastcat(cells)
+        })
+        .collect();
+    strudel_core::stack(tracks)
+}
+
+/// What to play — Send-able; the Pattern itself is built on the audio thread
+/// (strudel Pattern holds Rc and cannot cross threads).
+#[derive(Clone)]
+pub enum PatternSpec {
+    Grid([[bool; STEPS]; TRACKS]),
+    Mini(String),
+}
+
+impl PatternSpec {
+    fn build(&self) -> Pattern {
+        match self {
+            PatternSpec::Grid(g) => grid_pattern(g),
+            PatternSpec::Mini(src) => strudel_mini::eval_str(src, 0)
+                .unwrap_or_else(|_| strudel_core::silence()),
+        }
+    }
+}
 
 /// Shared state between the UI (writer) and the audio thread (reader).
 pub struct SeqState {
-    pub grid: Mutex<[[bool; STEPS]; TRACKS]>,
+    pub spec: Mutex<PatternSpec>,
+    pub spec_gen: AtomicU32, // bump after changing spec
     pub bpm: AtomicU32,
     pub playing: AtomicBool,
-    pub playhead: AtomicUsize, // written by audio thread for the UI
+    pub playhead: AtomicUsize, // 16th-note position within cycle, for the UI
     pub online: AtomicBool,    // pcm open succeeded
     quit: AtomicBool,
 }
@@ -242,9 +298,10 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn start(grid: [[bool; STEPS]; TRACKS], bpm: u32) -> Engine {
+    pub fn start(spec: PatternSpec, bpm: u32) -> Engine {
         let state = Arc::new(SeqState {
-            grid: Mutex::new(grid),
+            spec: Mutex::new(spec),
+            spec_gen: AtomicU32::new(0),
             bpm: AtomicU32::new(bpm),
             playing: AtomicBool::new(false),
             playhead: AtomicUsize::new(0),
@@ -324,23 +381,19 @@ fn audio_thread(s: Arc<SeqState>) {
     let mut buf = vec![0i16; PERIOD * CHANNELS];
     let mut voices: Vec<Voice> = Vec::new();
     let mut noise = Noise(0x1234_5678);
-    let mut step_pos: u32 = 0; // samples into current step
-    let mut step: usize = 0;
+    let mut cycle_pos: f64 = 0.0; // strudel time, in cycles (1 cycle = 1 bar)
     let mut was_playing = false;
+    // (frame offset within block, track) triggers for the current block
+    let mut triggers: Vec<(usize, usize)> = Vec::new();
+    // thread-local pattern, rebuilt when the UI bumps spec_gen
+    let mut pattern: Pattern = s.spec.lock().unwrap().build();
+    let mut last_gen = s.spec_gen.load(Ordering::Acquire);
 
     while !s.quit.load(Ordering::Relaxed) {
         let playing = s.playing.load(Ordering::Relaxed);
         if playing && !was_playing {
-            step = 0;
-            step_pos = 0;
+            cycle_pos = 0.0;
             s.playhead.store(0, Ordering::Relaxed);
-            // trigger step 0 immediately
-            let grid = *s.grid.lock().unwrap();
-            for (tr, row) in grid.iter().enumerate() {
-                if row[0] {
-                    voices.push(Voice { track: tr, t: 0 });
-                }
-            }
         }
         was_playing = playing;
         if !playing && voices.is_empty() {
@@ -350,23 +403,42 @@ fn audio_thread(s: Arc<SeqState>) {
             continue;
         }
 
-        let bpm = s.bpm.load(Ordering::Relaxed).clamp(40, 300);
-        let step_len = (RATE * 60 / bpm / 4).max(1); // samples per 16th
+        let gen = s.spec_gen.load(Ordering::Acquire);
+        if gen != last_gen {
+            last_gen = gen;
+            pattern = s.spec.lock().unwrap().build();
+        }
 
-        for fi in 0..PERIOD {
-            if playing {
-                step_pos += 1;
-                if step_pos >= step_len {
-                    step_pos = 0;
-                    step = (step + 1) % STEPS;
-                    s.playhead.store(step, Ordering::Relaxed);
-                    let grid = *s.grid.lock().unwrap();
-                    for (tr, row) in grid.iter().enumerate() {
-                        if row[step] {
-                            voices.push(Voice { track: tr, t: 0 });
-                        }
-                    }
+        triggers.clear();
+        if playing {
+            // 4 beats per cycle: cps = bpm / 240 (120 BPM -> 0.5 cps, strudel default)
+            let bpm = s.bpm.load(Ordering::Relaxed).clamp(40, 300) as f64;
+            let cps = bpm / 240.0;
+            let block_cycles = PERIOD as f64 / RATE as f64 * cps;
+            let (from, to) = (cycle_pos, cycle_pos + block_cycles);
+            let haps = pattern.query_arc(Fraction::from_float(from), Fraction::from_float(to));
+            for hap in &haps {
+                if !hap.has_onset() {
+                    continue; // continuation of a hap that started earlier
                 }
+                let Some(track) = hap.value.as_string().and_then(sound_to_track) else {
+                    continue;
+                };
+                let onset = hap.whole_or_part().begin.to_f64();
+                let off = ((onset - from) / block_cycles * PERIOD as f64).max(0.0) as usize;
+                triggers.push((off.min(PERIOD - 1), track));
+            }
+            triggers.sort_unstable();
+            cycle_pos = to;
+            let step = ((to.fract() * STEPS as f64) as usize).min(STEPS - 1);
+            s.playhead.store(step, Ordering::Relaxed);
+        }
+
+        let mut tg = triggers.iter().peekable();
+        for fi in 0..PERIOD {
+            while tg.peek().is_some_and(|(off, _)| *off == fi) {
+                let (_, track) = *tg.next().unwrap();
+                voices.push(Voice { track, t: 0 });
             }
             let mut acc = 0.0f32;
             for v in voices.iter_mut() {

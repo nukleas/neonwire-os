@@ -5,9 +5,10 @@ members = ["neon-gfx", "neonwire"]
 [workspace.dependencies]
 libc = "0.2"
 
-# Path deps into the strudel-rs workspace (Music app, feature-gated in neonwire).
+# Path deps into the strudel-rs workspace (Music app pattern engine).
 strudel-core = { path = "$HOME/src/strudel-rs/crates/strudel-core" }
 strudel-dsp = { path = "$HOME/src/strudel-rs/crates/strudel-dsp" }
+strudel-mini = { path = "$HOME/src/strudel-rs/crates/strudel-mini" }
 
 # Size-focused release profile: the binary rides the SD card but small = fast OTA.
 [profile.release]

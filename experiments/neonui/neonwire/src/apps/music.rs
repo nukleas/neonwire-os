@@ -9,13 +9,23 @@ use neon_gfx::geom::Rect;
 use neon_gfx::theme::*;
 
 use super::{App, Ctx, HitId, HitMap};
-use crate::audio::{speaker_amp, Engine, STEPS, TRACKS};
+use crate::audio::{speaker_amp, Engine, PatternSpec, STEPS, TRACKS};
+
+/// Mini-notation presets (validated against strudel-mini's parser). GRID is
+/// slot 0 and compiles the touch grid into a pattern via strudel combinators.
+const PRESETS: [(&str, &str); 4] = [
+    ("GRID", ""),
+    ("HOUSE", "bd*4, [~ hh]*4, ~ sd ~ sd"),
+    ("EUCLID", "bd(3,8), hh*8, ~ cp ~ [cp cp]"),
+    ("BREAK", "bd sd [bd bd] sd, hh*16"),
+];
 const TRACK_NAMES: [&str; TRACKS] = ["BD", "SD", "HH", "CP"];
 const TRACK_COLS: [u32; TRACKS] = [AMBER, MAGENTA, CYAN, GREEN];
 
 const HIT_PLAY: HitId = 0x9000;
 const HIT_BPM_DN: HitId = 0x9001;
 const HIT_BPM_UP: HitId = 0x9002;
+const HIT_PRESET0: HitId = 0x9010; // ..+3
 // step cells: id = track * 16 + step
 
 pub struct MusicApp {
@@ -23,6 +33,7 @@ pub struct MusicApp {
     playing: bool,
     bpm: u32,
     playhead: usize,
+    preset: usize,
     engine: Option<Engine>,
 }
 
@@ -38,12 +49,21 @@ impl MusicApp {
         for s in (2..STEPS).step_by(2) {
             grid[2][s] = true;
         }
-        MusicApp { grid, playing: false, bpm: 120, playhead: 0, engine: None }
+        MusicApp { grid, playing: false, bpm: 120, playhead: 0, preset: 0, engine: None }
+    }
+
+    fn spec(&self) -> PatternSpec {
+        if self.preset == 0 {
+            PatternSpec::Grid(self.grid)
+        } else {
+            PatternSpec::Mini(PRESETS[self.preset].1.to_string())
+        }
     }
 
     fn sync_engine(&mut self) {
         if let Some(e) = &self.engine {
-            *e.state.grid.lock().unwrap() = self.grid;
+            *e.state.spec.lock().unwrap() = self.spec();
+            e.state.spec_gen.fetch_add(1, Ordering::Release);
             e.state.bpm.store(self.bpm, Ordering::Relaxed);
             e.state.playing.store(self.playing, Ordering::Relaxed);
         }
@@ -105,9 +125,28 @@ impl App for MusicApp {
         };
         c.text(tx + 320, ty + 10, sink, sc, 1);
 
+        // preset chips + active notation string
+        let py = ty + 46;
+        let mut px = tx;
+        for (i, (name, _)) in PRESETS.iter().enumerate() {
+            let w = name.len() as i32 * 11 + 26;
+            let r = Rect::new(px, py, w, 28);
+            let on = i == self.preset;
+            let col = if on { AMBER } else { BORDER };
+            if on {
+                c.fill(r.x, r.y, r.w, r.h, mix(BG, AMBER, 40));
+            }
+            c.neonbox(r.x, r.y, r.w, r.h, col);
+            c.text(r.x + 13, r.y + 4, name, if on { AMBER } else { TEXT2 }, 1);
+            hits.add(r, HIT_PRESET0 + i as u32);
+            px += w + 10;
+        }
+        let notation = if self.preset == 0 { "<touch grid>" } else { PRESETS[self.preset].1 };
+        c.text(px + 14, py + 6, notation, GREEN, 1);
+
         // step grid
         let gx = area.x + 24;
-        let gy = ty + 56;
+        let gy = ty + 90;
         let gw = area.w - 60;
         let cell = (gw - 60) / STEPS as i32;
         let ch = ((area.h - (gy - area.y) - 30) / TRACKS as i32).min(56);
@@ -143,7 +182,7 @@ impl App for MusicApp {
                 self.playing = !self.playing;
                 if self.playing {
                     if self.engine.is_none() {
-                        self.engine = Some(Engine::start(self.grid, self.bpm));
+                        self.engine = Some(Engine::start(self.spec(), self.bpm));
                     }
                     speaker_amp(true);
                 } else {
@@ -163,9 +202,15 @@ impl App for MusicApp {
                 self.sync_engine();
                 true
             }
+            id if (HIT_PRESET0..HIT_PRESET0 + PRESETS.len() as u32).contains(&id) => {
+                self.preset = (id - HIT_PRESET0) as usize;
+                self.sync_engine();
+                true
+            }
             id if (id as usize) < TRACKS * STEPS => {
                 let (t, s) = (id as usize / STEPS, id as usize % STEPS);
                 self.grid[t][s] = !self.grid[t][s];
+                self.preset = 0; // editing the grid selects GRID mode
                 self.sync_engine();
                 true
             }
