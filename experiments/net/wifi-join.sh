@@ -45,6 +45,14 @@ else
   pgrep telnetd >/dev/null 2>&1 || telnetd -l /bin/sh -p 23
   echo "(dropbear not staged — started telnet fallback on :23)"
 fi
+# Tailscale for off-LAN access (ssh root@dl7006-neonos from anywhere). Auth state
+# persists on the SD, so this just restarts the daemon and it auto-reconnects —
+# no re-login after the first time. Backgrounded so it never delays boot.
+if [ -x "$LAB/tailscaled" ] && [ -x "$LAB/tailscale-up.sh" ]; then
+  sh "$LAB/tailscale-up.sh" >/tmp/tailscale-boot.log 2>&1 &
+fi
+
 echo "==== ONLINE ===="
 ifconfig wlan0 | grep "inet addr"
-echo "telnet to the address above to work wirelessly."
+[ -S /tmp/tailscaled.sock ] && "$LAB/tailscale" --socket=/tmp/tailscaled.sock ip 2>/dev/null | head -1 | sed 's/^/tailnet: /'
+echo "ssh in over wifi (LAN) or the tailnet address above."
