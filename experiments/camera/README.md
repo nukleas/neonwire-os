@@ -1,6 +1,36 @@
 # Camera bring-up — SP2509 (plan track A)
 
-## Status after A1 (2026-07-19): probe tool works, sensor not answering I2C yet
+## Status: SENSOR ALIVE on L1 (2026-07-19) — reads ID 0x2509 reproducibly
+
+`camprobe` now brings up the sensor master clock and reads the ID on the custom
+Linux userland: `SP2509 ONLINE (id=0x2509 drv=0x00010000)`, exit 0, 3/3 reproducible.
+The neonwire Camera app shows a green **SENSOR ONLINE** state.
+
+**The fix (MCLK bring-up).** The kernel never wires the sensor MCLK — the stock mtkcam
+HAL does it from userspace, and camprobe now replicates that:
+1. hold `/dev/camera-isp` open → `ISP_EnableClock` ungates SEN_TG/SEN_CAM;
+2. `ISP_SENSOR_FREQ_CTRL=1` → CAMTG clock mux to 48 MHz (univpll_d26);
+3. via `ISP_WRITE_REGISTER` (seninf regs are all in the ioctl window [0x4000,0x10000)):
+   `SENINF_TOP(0x8000)|=0x400`, `TG1_SEN_CK(0x8304)=0x00010001` (÷2 → 24 MHz),
+   **`TG1_PH_CNT(0x8300)=0xA0000001`** = PCEN(bit31) | ADCLK_EN(bit29) | TGCLK_SEL=1,
+   `CAM_TG_SEN_MODE(0x4410)|=1` (CMOS_EN).
+
+**Why the earlier attempt failed:** camprobe set only bit 29 (ADCLK_EN, what the kernel's
+`ISP_MCLK1_EN` toggles). That *gates* the clock but the **phase counter never ran** —
+`PCEN` (bit 31) is the actual MCLK-output enable. No oscillation → sensor unclocked →
+I2C ID reads 0x0000. One bit.
+
+**GPIO119/CMMCLK pinmux:** the pad was already muxed to CMMCLK by LK/boot — `/dev/mem`
+is blocked (STRICT_DEVMEM) so camprobe can't set it, but it doesn't need to. Register
+map came from the MT8127 mtkcam HAL source (`seninf_reg.h`, mt8127-tadpole vendor tree).
+
+Next: A3 — program seninf CSI-2 + ISP pass1 to DMA a raw Bayer frame to DRAM (the HAL
+sequence after this: `initTg1CSI2` calibration → `setTg1GrabRange` → pass1). The MCLK
+milestone proves the userspace-register approach works end to end.
+
+---
+
+## Historical: A1 (probe tool) + why ID was 0x0000
 
 `camprobe.c` (static musl armv7, ~36 KB) implements the plan's A1 contract:
 
