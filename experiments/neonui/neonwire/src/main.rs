@@ -6,6 +6,7 @@
 
 mod apps;
 mod audio;
+mod backlight;
 mod collectors;
 mod shell;
 mod statusbar;

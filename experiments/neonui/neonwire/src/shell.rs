@@ -14,6 +14,7 @@ use neon_gfx::theme::*;
 
 use crate::apps::home::{Home, TILES};
 use crate::apps::{App, Ctx, HitMap};
+use crate::backlight::Backlight;
 use crate::collectors::Collectors;
 use crate::statusbar::{self, BAR_H, HIT_HOME};
 
@@ -31,6 +32,7 @@ pub struct Shell {
     hits: HitMap,
     collectors: Collectors,
     toast: Option<(String, Instant)>,
+    backlight: Backlight,
     dirty: bool,
 }
 
@@ -50,6 +52,7 @@ impl Shell {
             hits: HitMap::default(),
             collectors: Collectors::new(),
             toast: None,
+            backlight: Backlight::new(),
             dirty: true,
         }
     }
@@ -146,8 +149,13 @@ impl Shell {
             }
             for (sx, sy) in taps {
                 eprintln!("tap screen({sx},{sy})");
+                // first tap after blanking only wakes the screen — swallow it
+                if self.backlight.on_activity() {
+                    continue;
+                }
                 self.on_tap(sx, sy);
             }
+            self.backlight.tick();
 
             if last_tick.elapsed().as_millis() as u64 >= tick_ms {
                 last_tick = Instant::now();
@@ -159,7 +167,9 @@ impl Shell {
                 }
                 self.dirty = true; // per-tick redraw (status values move)
             }
-            if self.dirty {
+            // skip compositing while the panel is dark — nothing to show, and it
+            // avoids needless PAN flushes / CPU on the idle path
+            if self.dirty && !self.backlight.is_blanked() {
                 self.draw();
                 self.dirty = false;
             }
