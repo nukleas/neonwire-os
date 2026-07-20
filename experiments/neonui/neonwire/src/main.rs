@@ -5,6 +5,7 @@
 //! --probe/--evdump (touch calibration), --shot/--tap (headless render/tap).
 
 mod apps;
+mod audio;
 mod collectors;
 mod shell;
 mod statusbar;
@@ -22,8 +23,42 @@ fn main() {
         Some("--card") => testcard(args.get(2).map(String::as_str)),
         Some("--probe") => probe_touch(&args, false),
         Some("--evdump") => probe_touch(&args, true),
+        Some("--tone") => tone(),
         _ => run_shell(&args),
     }
+}
+
+/// B2 verification: 2 s of 440 Hz through the raw-ioctl PCM path, no libasound.
+fn tone() {
+    audio::speaker_amp(true);
+    std::thread::sleep(Duration::from_millis(400)); // let amixer land
+    let pcm = match audio::Pcm::open() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("pcm open: {e}");
+            audio::speaker_amp(false);
+            std::process::exit(1);
+        }
+    };
+    println!("pcm configured: S16_LE 2ch 44100, period 2048 x2");
+    let mut buf = vec![0i16; audio::PERIOD * audio::CHANNELS];
+    let mut phase = 0.0f32;
+    let step = 2.0 * std::f32::consts::PI * 440.0 / audio::RATE as f32;
+    for _ in 0..(2 * audio::RATE as usize / audio::PERIOD) {
+        for f in 0..audio::PERIOD {
+            let s = (phase.sin() * 12000.0) as i16;
+            phase += step;
+            buf[f * 2] = s;
+            buf[f * 2 + 1] = s;
+        }
+        if let Err(e) = pcm.write(&buf) {
+            eprintln!("write: {e}");
+            audio::speaker_amp(false);
+            std::process::exit(1);
+        }
+    }
+    audio::speaker_amp(false);
+    println!("TONE DONE");
 }
 
 fn run_shell(args: &[String]) {

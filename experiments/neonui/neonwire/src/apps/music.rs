@@ -1,15 +1,15 @@
-//! MUSIC app — strudel step sequencer shell. M4 scope: the 16-step grid UI
-//! with toggleable steps and a moving playhead (visual only). Pattern eval via
-//! strudel-core and real audio (tinyalsa-style PCM sink) land in M7/B2-B3.
+//! MUSIC app — step sequencer with REAL audio: the B2 PCM engine renders drum
+//! voices straight to /dev/snd/pcmC0D5p on its own thread. Strudel pattern
+//! eval layers on in B3.
+
+use std::sync::atomic::Ordering;
 
 use neon_gfx::canvas::{mix, Canvas};
 use neon_gfx::geom::Rect;
 use neon_gfx::theme::*;
 
 use super::{App, Ctx, HitId, HitMap};
-
-const STEPS: usize = 16;
-const TRACKS: usize = 4;
+use crate::audio::{speaker_amp, Engine, STEPS, TRACKS};
 const TRACK_NAMES: [&str; TRACKS] = ["BD", "SD", "HH", "CP"];
 const TRACK_COLS: [u32; TRACKS] = [AMBER, MAGENTA, CYAN, GREEN];
 
@@ -23,7 +23,7 @@ pub struct MusicApp {
     playing: bool,
     bpm: u32,
     playhead: usize,
-    tick_count: u32,
+    engine: Option<Engine>,
 }
 
 impl MusicApp {
@@ -38,7 +38,15 @@ impl MusicApp {
         for s in (2..STEPS).step_by(2) {
             grid[2][s] = true;
         }
-        MusicApp { grid, playing: false, bpm: 120, playhead: 0, tick_count: 0 }
+        MusicApp { grid, playing: false, bpm: 120, playhead: 0, engine: None }
+    }
+
+    fn sync_engine(&mut self) {
+        if let Some(e) = &self.engine {
+            *e.state.grid.lock().unwrap() = self.grid;
+            e.state.bpm.store(self.bpm, Ordering::Relaxed);
+            e.state.playing.store(self.playing, Ordering::Relaxed);
+        }
     }
 }
 
@@ -53,17 +61,17 @@ impl App for MusicApp {
 
     fn tick_ms(&self) -> u64 {
         if self.playing {
-            // 4 steps per beat: ms per 16th note
-            (60_000 / self.bpm / 4).max(40) as u64
+            // UI refresh only; audio timing lives on the engine thread
+            (60_000 / self.bpm / 4).clamp(40, 250) as u64
         } else {
             1000
         }
     }
 
     fn tick(&mut self, _ctx: &mut Ctx) {
-        self.tick_count = self.tick_count.wrapping_add(1);
-        if self.playing {
-            self.playhead = (self.playhead + 1) % STEPS;
+        // playhead is owned by the audio thread; UI just mirrors it
+        if let Some(e) = &self.engine {
+            self.playhead = e.state.playhead.load(Ordering::Relaxed);
         }
     }
 
@@ -90,7 +98,12 @@ impl App for MusicApp {
         hits.add(bu, HIT_BPM_UP);
         let bpm = format!("{} BPM", self.bpm);
         c.text(tx + 178, ty + 10, &bpm, AMBER, 1);
-        c.text(tx + 320, ty + 10, "audio sink: OFFLINE (B2)", TEXT_DIM, 1);
+        let (sink, sc) = match &self.engine {
+            Some(e) if e.state.online.load(Ordering::Relaxed) => ("SINK hw:0,5 LIVE", GREEN),
+            Some(_) => ("SINK OPENING...", AMBER),
+            None => ("SINK IDLE", TEXT_DIM),
+        };
+        c.text(tx + 320, ty + 10, sink, sc, 1);
 
         // step grid
         let gx = area.x + 24;
@@ -128,22 +141,32 @@ impl App for MusicApp {
         match id {
             HIT_PLAY => {
                 self.playing = !self.playing;
-                if !self.playing {
+                if self.playing {
+                    if self.engine.is_none() {
+                        self.engine = Some(Engine::start(self.grid, self.bpm));
+                    }
+                    speaker_amp(true);
+                } else {
                     self.playhead = 0;
+                    speaker_amp(false);
                 }
+                self.sync_engine();
                 true
             }
             HIT_BPM_DN => {
                 self.bpm = self.bpm.saturating_sub(5).max(40);
+                self.sync_engine();
                 true
             }
             HIT_BPM_UP => {
                 self.bpm = (self.bpm + 5).min(300);
+                self.sync_engine();
                 true
             }
             id if (id as usize) < TRACKS * STEPS => {
                 let (t, s) = (id as usize / STEPS, id as usize % STEPS);
                 self.grid[t][s] = !self.grid[t][s];
+                self.sync_engine();
                 true
             }
             _ => false,
