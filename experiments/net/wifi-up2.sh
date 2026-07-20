@@ -54,12 +54,14 @@ fi
 cat /tmp/wmtctl2.out 2>/dev/null
 [ -e /sys/class/net/wlan0 ] && echo "  wlan0 OK" || { echo "  *** wlan0 absent"; dmesg | grep -iE "wmt|patch" | tail -8; exit 1; }
 
-say "6. wpa_supplicant (static musl, WEXT driver)"
+say "6. wpa_supplicant (static musl, nl80211 driver)"
+# NB: use nl80211, NOT wext — wext associates but never completes the 4-way
+# handshake on this MT8127 wl chip. The wpas on SD is built with nl80211+libnl-tiny.
 ifconfig wlan0 up
 if ! ps | grep -q "[w]pas"; then
   CONF=/tmp/wpa.conf
   if [ -s $LAB/wpa.conf ]; then cp $LAB/wpa.conf $CONF; else printf "ctrl_interface=/tmp/wpa\nupdate_config=1\n" > $CONF; fi
-  $LAB/wpas -iwlan0 -Dwext -c$CONF -B
+  $LAB/wpas -iwlan0 -Dnl80211 -c$CONF -B
 fi
 
 say "7. join"
