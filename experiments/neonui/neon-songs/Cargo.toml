@@ -14,10 +14,10 @@ license = "AGPL-3.0-or-later"
 # data, no sample banks, no network.
 
 [dependencies]
-strudel-core = { path = "$HOME/src/strudel-rs/crates/strudel-core" }
-strudel-dsp = { path = "$HOME/src/strudel-rs/crates/strudel-dsp" }
-strudel-dsl = { path = "$HOME/src/strudel-rs/crates/strudel-dsl" }
-strudel-internal = { path = "$HOME/src/strudel-rs/crates/strudel-internal" }
-strudel-music-theory = { path = "$HOME/src/strudel-rs/crates/strudel-music-theory" }
-strudel-soundfont = { path = "$HOME/src/strudel-rs/crates/strudel-soundfont", default-features = false, features = ["gm"] }
+strudel-core = { workspace = true }
+strudel-dsp = { workspace = true }
+strudel-dsl = { workspace = true }
+strudel-internal = { workspace = true }
+strudel-music-theory = { workspace = true }
+strudel-soundfont = { workspace = true }
 rustc-hash = "2"

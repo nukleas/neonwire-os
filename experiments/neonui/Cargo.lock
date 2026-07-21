@@ -1003,6 +1003,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 [[package]]
 name = "strudel-core"
 version = "0.1.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "rand 0.10.2",
  "rustc-hash",
@@ -1015,6 +1016,7 @@ dependencies = [
 [[package]]
 name = "strudel-dsl"
 version = "0.1.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "anyhow",
  "clap",
@@ -1035,6 +1037,7 @@ dependencies = [
 [[package]]
 name = "strudel-dsp"
 version = "0.1.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "rand 0.10.2",
  "strudel-internal",
@@ -1043,10 +1046,12 @@ dependencies = [
 [[package]]
 name = "strudel-internal"
 version = "0.0.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 
 [[package]]
 name = "strudel-macros"
 version = "0.0.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "convert_case",
  "proc-macro2",
@@ -1058,6 +1063,7 @@ dependencies = [
 [[package]]
 name = "strudel-mini"
 version = "0.1.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "anyhow",
  "clap",
@@ -1073,6 +1079,7 @@ dependencies = [
 [[package]]
 name = "strudel-music-theory"
 version = "0.1.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "serde",
  "strudel-internal",
@@ -1081,6 +1088,7 @@ dependencies = [
 [[package]]
 name = "strudel-soundfont"
 version = "0.1.0"
+source = "git+https://codeberg.org/nukleas/strudel-rs?rev=88ad84020aece3d480bffd1d6adc69cddf14bc79#88ad84020aece3d480bffd1d6adc69cddf14bc79"
 dependencies = [
  "strudel-internal",
  "strudel-music-theory",

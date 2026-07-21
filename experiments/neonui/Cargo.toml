@@ -9,10 +9,17 @@ serde_json = "1"
 # rustls-backed HTTP for ocint.app (device busybox wget lacks modern TLS)
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 
-# Path deps into the strudel-rs workspace (Music app pattern engine).
-strudel-core = { path = "$HOME/src/strudel-rs/crates/strudel-core" }
-strudel-dsp = { path = "$HOME/src/strudel-rs/crates/strudel-dsp" }
-strudel-mini = { path = "$HOME/src/strudel-rs/crates/strudel-mini" }
+# Strudel engine (Music app + neon-songs) — git dep on strudel-rs, pinned.
+# AGPL-3.0; see neon-songs's LICENSING.md. The pinned rev MUST include the
+# arm32 ContextKeyBitset align(16) fix (88ad840) or the armv7 build fails a
+# compile-time layout assert. Bump the rev in lockstep across all seven.
+strudel-core = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79" }
+strudel-dsp = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79" }
+strudel-dsl = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79" }
+strudel-mini = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79" }
+strudel-internal = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79" }
+strudel-music-theory = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79" }
+strudel-soundfont = { git = "https://codeberg.org/nukleas/strudel-rs", rev = "88ad84020aece3d480bffd1d6adc69cddf14bc79", default-features = false, features = ["gm"] }
 
 # Size-focused release profile: the binary rides the SD card but small = fast OTA.
 [profile.release]
