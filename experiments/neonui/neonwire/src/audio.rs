@@ -206,19 +206,81 @@ impl Drop for Pcm {
     }
 }
 
-/// Speaker amp on/off via the Alpine chroot's amixer (B1 recipe). Native
-/// controlC0 ELEM ioctls can replace this later; this is honest and works.
+// ---- native ALSA control: /dev/snd/controlC0 ELEM_WRITE, no chroot ----
+//
+// The old amixer-in-Alpine-chroot shell-out silently no-opped whenever
+// /mnt/data wasn't mounted (post-reboot: music played into a powered-off amp).
+// The kernel resolves controls by name when numid==0, so one ioctl suffices.
+
+const CTL_DEV: &str = "/dev/snd/controlC0";
+const SNDRV_CTL_ELEM_IFACE_MIXER: u32 = 2;
+
+/// The kernel's value union holds `long long[64]`, which is 8-byte aligned on
+/// ARM EABI (unlike x86-32) — 4 pad bytes land after `indirect`.
+#[repr(C, align(8))]
+struct CtlValueUnion([u8; 512]); // enumerated = u32 item[128]
+
+/// 3.18 snd_ctl_elem_value, arm32: id(64) + indirect(4) + pad(4) + union(512)
+/// + timespec(8) + reserved(120) + tailpad(4) = 712 bytes.
+#[repr(C)]
+struct SndCtlElemValue {
+    // snd_ctl_elem_id
+    numid: u32,
+    iface: u32,
+    device: u32,
+    subdevice: u32,
+    name: [u8; 44],
+    index: u32,
+    indirect: u32,
+    value: CtlValueUnion,
+    tstamp: [libc::c_long; 2],
+    reserved: [u8; 120],
+}
+
+// arm32 ABI: any drift here changes the ioctl number and the driver ENOTTYs.
+// 712 verified against the device kernel with scratch ctltest.c (2026-07-20).
+const _: () = assert!(std::mem::size_of::<SndCtlElemValue>() == 712);
+
+fn ioctl_ctl_elem_write() -> libc::c_int {
+    // _IOWR('U', 0x13, struct snd_ctl_elem_value)
+    (3u32 << 30
+        | (std::mem::size_of::<SndCtlElemValue>() as u32) << 16
+        | (b'U' as u32) << 8
+        | 0x13) as libc::c_int
+}
+
+fn ctl_set_enum(name: &str, item: u32) -> io::Result<()> {
+    let dev = std::ffi::CString::new(CTL_DEV).unwrap();
+    let fd = unsafe { libc::open(dev.as_ptr(), libc::O_RDWR) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut v: SndCtlElemValue = unsafe { std::mem::zeroed() };
+    v.iface = SNDRV_CTL_ELEM_IFACE_MIXER;
+    v.name[..name.len()].copy_from_slice(name.as_bytes());
+    v.value.0[..4].copy_from_slice(&item.to_ne_bytes());
+    let rc = unsafe { libc::ioctl(fd, ioctl_ctl_elem_write(), &mut v) };
+    let err = io::Error::last_os_error();
+    unsafe { libc::close(fd) };
+    if rc < 0 {
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// Speaker amp on/off — the HAL-faithful bring-up (audio-recipe.md): ONE
+/// control (`Speaker_Amp_Switch`) + PGA gain; DAPM powers the rest while
+/// a stream is live on hw:0,5.
 pub fn speaker_amp(on: bool) {
-    let cmd = format!(
-        "amixer -c0 sset Speaker_Amp_Switch {} >/dev/null 2>&1; \
-         amixer -c0 sset Audio_Speaker_PGA_gain 8Db >/dev/null 2>&1",
-        if on { "On" } else { "Off" }
-    );
-    let _ = std::process::Command::new("/bin/sh")
-        .args(["/mnt/data/alpine-enter.sh", "-c", &cmd])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    if let Err(e) = ctl_set_enum("Speaker_Amp_Switch", on as u32) {
+        eprintln!("mixer: Speaker_Amp_Switch {}: {e}", if on { "On" } else { "Off" });
+    }
+    if on {
+        // enum items: MUTE,0Db,4Db,5Db,6Db,7Db,8Db,... -> '8Db' = index 6
+        if let Err(e) = ctl_set_enum("Audio_Speaker_PGA_gain", 6) {
+            eprintln!("mixer: Audio_Speaker_PGA_gain: {e}");
+        }
+    }
 }
 
 // ---- sequencer audio engine (strudel-core pattern scheduler, B3) ----

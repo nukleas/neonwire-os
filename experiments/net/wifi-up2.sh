@@ -19,6 +19,16 @@ say "0. SD (persistent tools)"
 mount -t vfat -o rw /dev/mmcblk1p1 /mnt/sd 2>/dev/null
 [ -x $LAB/wmtctl2 ] || { echo "  *** $LAB/wmtctl2 missing — push it first"; exit 1; }
 
+say "0b. /mnt/data (ext4 userdata: Alpine dev chroot)"
+# Deliberately BEFORE the wifi steps — they can exit 1, and the chroot must not
+# depend on wifi. (2026-07-20: this mount was missing entirely; after a reboot
+# the Music app played into a powered-off amp because speaker_amp() shelled out
+# to the chroot's amixer. neonwire now sets the mixer natively, but the chroot
+# still lives here.)
+mkdir -p /mnt/data
+grep -q " /mnt/data " /proc/mounts || mount -t ext4 /dev/mmcblk0p8 /mnt/data 2>/dev/null
+grep -q " /mnt/data " /proc/mounts && echo "  /mnt/data OK" || echo "  *** mmcblk0p8 mount FAILED"
+
 say "1. mount stock /system + bind (bionic linker + wmt_loader + firmware)"
 mkdir -p /mnt/system /system /vendor
 mount -t ext4 -o ro,noload /dev/mmcblk0p6 /mnt/system 2>/dev/null
