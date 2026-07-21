@@ -113,9 +113,17 @@ pub struct Pcm {
 impl Pcm {
     pub fn open() -> io::Result<Pcm> {
         let dev = std::ffi::CString::new(PCM_DEV).unwrap();
-        let fd = unsafe { libc::open(dev.as_ptr(), libc::O_RDWR) };
+        // O_NONBLOCK: a busy pcm must fail EBUSY immediately — the kernel
+        // otherwise parks the open() until the other stream closes, which
+        // looked like an eternal "LOADING" hang. Cleared after open so
+        // writes pace playback normally.
+        let fd = unsafe { libc::open(dev.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
+        }
+        unsafe {
+            let fl = libc::fcntl(fd, libc::F_GETFL);
+            libc::fcntl(fd, libc::F_SETFL, fl & !libc::O_NONBLOCK);
         }
         let pcm = Pcm { fd, xruns: AtomicU32::new(0) };
         pcm.configure()?;

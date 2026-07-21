@@ -129,7 +129,16 @@ fn ascii(s: &str) -> String {
 
 fn read_track(path: String) -> TrackMeta {
     let src = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines = src.lines();
+    let mut lines = src.lines().peekable();
+    // robostrudel session files carry YAML frontmatter — skip to the comments
+    if lines.peek() == Some(&"---") {
+        lines.next();
+        for l in lines.by_ref() {
+            if l == "---" {
+                break;
+            }
+        }
+    }
     let title = lines
         .next()
         .and_then(|l| l.strip_prefix("//"))

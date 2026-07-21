@@ -83,12 +83,29 @@ impl SongRenderer {
     /// Load any SD sample banks the pattern references within `horizon_cycles`
     /// (dirt-samples layout under `root`). Call after `set_pattern`, before
     /// `begin`. Returns the bank names loaded; unknown banks render silent.
+    ///
+    /// Queries in SHORT chunks: on deeply nested patterns (arrange/pickRestart)
+    /// query_arc cost grows superlinearly with arc length — a single 256-cycle
+    /// discovery query took >40 s on-device for one Agency track, while the
+    /// same span in 4-cycle chunks is near-instant (matches the per-block
+    /// scheduling arcs, which were never slow).
     pub fn load_sd_banks(&mut self, root: &str, horizon_cycles: f64) -> Vec<String> {
-        let missing = self
-            .main_proc
-            .query_missing_banks(Fraction::ZERO, Fraction::from_float(horizon_cycles));
+        let mut missing_banks: Vec<Box<str>> = Vec::new();
+        let mut c = 0.0f64;
+        while c < horizon_cycles {
+            let end = (c + 4.0).min(horizon_cycles);
+            let m = self
+                .main_proc
+                .query_missing_banks(Fraction::from_float(c), Fraction::from_float(end));
+            for b in m.manifest_banks {
+                if !missing_banks.contains(&b) {
+                    missing_banks.push(b);
+                }
+            }
+            c = end;
+        }
         let mut loaded = Vec::new();
-        for bank in &missing.manifest_banks {
+        for bank in &missing_banks {
             let samples = crate::sdbank::load_bank_cached(root, bank);
             if samples.is_empty() {
                 continue;
