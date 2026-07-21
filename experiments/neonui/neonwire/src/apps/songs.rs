@@ -18,6 +18,74 @@ const HIT_VOL0: HitId = 0xA020; // ..+VOL_SEGS-1
 const VOL_SEGS: u32 = 12;
 const MAX_DESC: usize = 14;
 
+// ---- visualizer: 1024-pt FFT -> 16 log bands, scope, VU ----
+const FFT_N: usize = 1024;
+const BANDS: usize = 16;
+
+struct Fft {
+    rev: Vec<usize>,
+    window: Vec<f32>,
+    re: Vec<f32>,
+    im: Vec<f32>,
+}
+
+impl Fft {
+    fn new() -> Fft {
+        let bits = FFT_N.trailing_zeros();
+        let rev = (0..FFT_N).map(|i| i.reverse_bits() >> (usize::BITS - bits)).collect();
+        let window = (0..FFT_N)
+            .map(|i| {
+                0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (FFT_N - 1) as f32).cos()
+            })
+            .collect();
+        Fft { rev, window, re: vec![0.0; FFT_N], im: vec![0.0; FFT_N] }
+    }
+
+    /// Windowed magnitude spectrum of `input[..FFT_N]` into 16 log-spaced
+    /// bands, 0..1. ~50k mults — microseconds, even on the A7.
+    fn bands(&mut self, input: &[f32], out: &mut [f32; BANDS]) {
+        for i in 0..FFT_N {
+            self.re[self.rev[i]] = input.get(i).copied().unwrap_or(0.0) * self.window[i];
+        }
+        self.im.fill(0.0);
+        let mut len = 2;
+        while len <= FFT_N {
+            let ang = -2.0 * std::f32::consts::PI / len as f32;
+            let (wr, wi) = (ang.cos(), ang.sin());
+            let mut start = 0;
+            while start < FFT_N {
+                let (mut cr, mut ci) = (1.0f32, 0.0f32);
+                for k in 0..len / 2 {
+                    let (ar, ai) = (self.re[start + k], self.im[start + k]);
+                    let (br, bi) = (self.re[start + k + len / 2], self.im[start + k + len / 2]);
+                    let (tr, ti) = (br * cr - bi * ci, br * ci + bi * cr);
+                    self.re[start + k] = ar + tr;
+                    self.im[start + k] = ai + ti;
+                    self.re[start + k + len / 2] = ar - tr;
+                    self.im[start + k + len / 2] = ai - ti;
+                    let ncr = cr * wr - ci * wi;
+                    ci = cr * wi + ci * wr;
+                    cr = ncr;
+                }
+                start += len;
+            }
+            len <<= 1;
+        }
+        // log-spaced band edges: bin 1 (~43 Hz) .. bin 400 (~17 kHz)
+        for b in 0..BANDS {
+            let lo = (400f32.powf(b as f32 / BANDS as f32)) as usize;
+            let hi = ((400f32.powf((b + 1) as f32 / BANDS as f32)) as usize).max(lo + 1);
+            let mut m = 0f32;
+            for bin in lo..hi.min(FFT_N / 2) {
+                m = m.max(self.re[bin].hypot(self.im[bin]));
+            }
+            // full-scale sine under Hann ≈ N/4; -54 dB floor
+            let db = 20.0 * (m / (FFT_N as f32 / 4.0) + 1e-9).log10();
+            out[b] = ((db + 54.0) / 54.0).clamp(0.0, 1.0);
+        }
+    }
+}
+
 struct TrackMeta {
     path: String,
     title: String,
@@ -84,6 +152,11 @@ pub struct SongsApp {
     cycle_c: u32,
     load_pct: u32,
     error: Option<String>,
+    // visualizer state
+    fft: Fft,
+    scope: Vec<f32>,
+    spectrum: [f32; BANDS],
+    vu: [f32; 2],
 }
 
 impl SongsApp {
@@ -97,6 +170,10 @@ impl SongsApp {
             cycle_c: 0,
             load_pct: 0,
             error: None,
+            fft: Fft::new(),
+            scope: Vec::new(),
+            spectrum: [0.0; BANDS],
+            vu: [0.0; 2],
         }
     }
 
@@ -133,7 +210,7 @@ impl App for SongsApp {
 
     fn tick_ms(&self) -> u64 {
         if self.player.is_some() {
-            250
+            80 // ~12 fps for the visualizer
         } else {
             1000
         }
@@ -146,6 +223,25 @@ impl App for SongsApp {
             self.cycle_c = p.state.cycle_c.load(Ordering::Relaxed);
             self.load_pct = p.state.load_pct.load(Ordering::Relaxed);
             err = p.state.error.lock().unwrap().take();
+            // visualizer inputs: copy the scope block, fold in peaks
+            {
+                let s = p.state.scope.lock().unwrap();
+                self.scope.clear();
+                self.scope.extend_from_slice(&s);
+            }
+            let pl = p.state.peak_l.load(Ordering::Relaxed) as f32 / 1000.0;
+            let pr = p.state.peak_r.load(Ordering::Relaxed) as f32 / 1000.0;
+            self.vu[0] = pl.max(self.vu[0] * 0.78);
+            self.vu[1] = pr.max(self.vu[1] * 0.78);
+            if self.scope.len() >= FFT_N {
+                let mut bands = [0.0; BANDS];
+                let scope = std::mem::take(&mut self.scope);
+                self.fft.bands(&scope, &mut bands);
+                self.scope = scope;
+                for b in 0..BANDS {
+                    self.spectrum[b] = bands[b].max(self.spectrum[b] * 0.80);
+                }
+            }
         }
         if let Some(e) = err {
             self.error = Some(e);
@@ -232,6 +328,56 @@ impl App for SongsApp {
             hits.add(r, HIT_VOL0 + k);
         }
         y += 34;
+
+        // ---- visualizer (only while playing) ----
+        if self.playing.is_some() {
+            // 16-band spectrum
+            let spec_h = 64;
+            let bw = (pw / BANDS as i32).clamp(8, 26);
+            for (b, v) in self.spectrum.iter().enumerate() {
+                let bh = ((spec_h - 2) as f32 * v) as i32;
+                let x = px + b as i32 * bw;
+                let heat = (*v * 100.0) as i32;
+                let col = mix(MAGENTA, CYAN, 100 - heat);
+                c.fill(x, y + spec_h - bh, bw - 2, bh.max(1), mix(BG, col, 40 + heat * 2));
+                // peak cap line
+                c.hline(x, y + spec_h - bh - 1, bw - 2, col);
+            }
+            y += spec_h + 8;
+
+            // oscilloscope: per-column min/max of the last block
+            let scope_h = 44;
+            let mid = y + scope_h / 2;
+            c.hline(px, mid, pw - 8, mix(BG, GREEN, 60));
+            if !self.scope.is_empty() {
+                let cols = (pw - 8).max(1) as usize;
+                let n = self.scope.len();
+                for cx in 0..cols {
+                    let s0 = cx * n / cols;
+                    let s1 = ((cx + 1) * n / cols).max(s0 + 1);
+                    let (mut lo, mut hi) = (0f32, 0f32);
+                    for s in &self.scope[s0..s1.min(n)] {
+                        lo = lo.min(*s);
+                        hi = hi.max(*s);
+                    }
+                    let ytop = mid - (hi * (scope_h / 2 - 1) as f32) as i32;
+                    let ybot = mid - (lo * (scope_h / 2 - 1) as f32) as i32;
+                    c.vline(px + cx as i32, ytop, (ybot - ytop).max(1), GREEN);
+                }
+            }
+            y += scope_h + 8;
+
+            // stereo VU
+            for (ch, lbl) in ["L", "R"].iter().enumerate() {
+                c.text(px, y - 3, lbl, TEXT_DIM, 1);
+                let vw = ((pw - 30) as f32 * self.vu[ch].min(1.0)) as i32;
+                let col = if self.vu[ch] > 0.9 { RED } else { CYAN };
+                c.fill(px + 22, y, vw.max(1), 8, mix(BG, col, 150));
+                c.neonbox(px + 22, y, pw - 30, 8, mix(BG, BORDER, 140));
+                y += 14;
+            }
+            y += 8;
+        }
 
         // the song's own header comment block — its liner notes
         if let Some(i) = self.playing {

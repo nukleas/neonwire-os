@@ -17,6 +17,11 @@ pub struct SongState {
     pub cycle_c: AtomicU32,   // pattern cycle × 100
     pub load_pct: AtomicU32,  // render cost as % of realtime
     pub volume: AtomicU32,    // 0..=256, shared with UI
+    pub peak_l: AtomicU32,    // block peak × 1000, pre-volume
+    pub peak_r: AtomicU32,
+    /// Mono downmix of the latest rendered block (PERIOD samples) for the
+    /// visualizer. Swapped wholesale each block; UI copies under the lock.
+    pub scope: Mutex<Vec<f32>>,
     pub error: Mutex<Option<String>>,
     quit: AtomicBool,
 }
@@ -36,6 +41,9 @@ impl SongPlayer {
             cycle_c: AtomicU32::new(0),
             load_pct: AtomicU32::new(0),
             volume: AtomicU32::new(volume.min(256)),
+            peak_l: AtomicU32::new(0),
+            peak_r: AtomicU32::new(0),
+            scope: Mutex::new(Vec::new()),
             error: Mutex::new(None),
             quit: AtomicBool::new(false),
         });
@@ -83,6 +91,7 @@ fn song_thread(state: &SongState, src: &str) {
 
     r.begin();
     let mut ibuf = vec![0i16; PERIOD * 2];
+    let mut mono = vec![0f32; PERIOD];
     let mut render_ns: u64 = 0;
     let mut audio_ns: u64 = 0;
     while !state.quit.load(Ordering::Relaxed) {
@@ -90,9 +99,25 @@ fn song_thread(state: &SongState, src: &str) {
         let gain = 28000.0 * vol;
         let tb = std::time::Instant::now();
         let (l, rr) = r.next_block();
+        let (mut pl, mut pr) = (0f32, 0f32);
         for i in 0..PERIOD {
             ibuf[i * 2] = (l[i].clamp(-1.0, 1.0) * gain) as i16;
             ibuf[i * 2 + 1] = (rr[i].clamp(-1.0, 1.0) * gain) as i16;
+            pl = pl.max(l[i].abs());
+            pr = pr.max(rr[i].abs());
+            mono[i] = (l[i] + rr[i]) * 0.5;
+        }
+        state.peak_l.store((pl.min(1.0) * 1000.0) as u32, Ordering::Relaxed);
+        state.peak_r.store((pr.min(1.0) * 1000.0) as u32, Ordering::Relaxed);
+        {
+            let mut s = state.scope.lock().unwrap();
+            if s.len() != PERIOD {
+                s.resize(PERIOD, 0.0);
+            }
+            std::mem::swap::<Vec<f32>>(&mut s, &mut mono);
+        }
+        if mono.len() != PERIOD {
+            mono.resize(PERIOD, 0.0);
         }
         render_ns += tb.elapsed().as_nanos() as u64;
         audio_ns += PERIOD as u64 * 1_000_000_000 / RATE as u64;
