@@ -23,7 +23,7 @@ OFFSET=0x1d80000    # boot partition (default)
 
 mode="${1:-flash}"
 case "$mode" in
-  flash)         IMG="$NEONOS"; echo "=== FLASH NEONWIRE OS (L1 + neui boot face) ===" ;;
+  flash)         IMG="$NEONOS"; echo "=== FLASH NEONWIRE OS (L1 + neonwire Rust boot face, neui recovery) ===" ;;
   restore)       IMG="$L1";     echo "=== RESTORE known-good L1 (serial shell only) ===" ;;
   restore-stock) IMG="$STOCK";  echo "=== RESTORE stock Android boot ===" ;;
   logo)          IMG="$NEONOS_LOGO"; OFFSET=0x4400000; echo "=== FLASH NEONWIRE boot splash (logo partition) ===" ;;

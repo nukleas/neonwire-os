@@ -71,3 +71,4 @@ zImage*
 # --- rust workspace build artifacts ---
 experiments/neonui/target/
 experiments/camera/camprobe
+experiments/camera/camdump

@@ -8,7 +8,10 @@ mod apps;
 mod audio;
 mod backlight;
 mod collectors;
+mod hass;
+mod ocint;
 mod power;
+mod rail;
 mod shell;
 mod statusbar;
 mod widgets;
@@ -30,7 +33,81 @@ fn main() {
         Some("--tone") => tone(),
         Some("--wpa-probe") => wpa_probe(),
         Some("--power-test") => power_test(),
+        Some("--ocint-probe") => ocint_probe(),
+        Some("--hass-probe") => hass_probe(),
         _ => run_shell(&args),
+    }
+}
+
+/// Hit Home Assistant REST and print a short summary.
+fn hass_probe() {
+    println!("HASS PROBE");
+    match hass::ping() {
+        Ok(m) => println!("ping: {m}"),
+        Err(e) => {
+            eprintln!("ping FAIL: {e}");
+            std::process::exit(1);
+        }
+    }
+    match hass::fetch() {
+        Ok(s) => {
+            println!(
+                "entities={} lights_on={} switches_on={} base={}",
+                s.total, s.lights_on, s.switches_on, s.base
+            );
+            if let Some(w) = &s.weather {
+                println!("weather {w}");
+            }
+            if let Some(c) = &s.climate {
+                println!("climate {c}");
+            }
+            for e in s.entities.iter().take(12) {
+                println!(
+                    "  [{:7}] {:8} {}",
+                    e.domain,
+                    e.state,
+                    e.name.chars().take(40).collect::<String>()
+                );
+            }
+            println!("HASS PROBE OK");
+        }
+        Err(e) => {
+            eprintln!("fetch FAIL: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Hit ocint.app over HTTPS and print a one-line summary (deploy smoke test).
+fn ocint_probe() {
+    println!("OCINT PROBE base=https://ocint.app");
+    match ocint::fetch(None, 5) {
+        Ok(s) => {
+            println!(
+                "stats today={} week={} fires={} outages={} aqi={:?}",
+                s.stats.total_today,
+                s.stats.total_week,
+                s.stats.active_fires,
+                s.stats.active_outages,
+                s.stats.current_aqi
+            );
+            if let Some(w) = &s.stats.weather_summary {
+                println!("weather {}", ocint::ascii(w));
+            }
+            for (i, it) in s.items.iter().take(5).enumerate() {
+                println!(
+                    "  [{i}] {} {}  {}",
+                    ocint::cat_label(&it.category),
+                    ocint::age_label(&it.published_at),
+                    ocint::ascii(&it.title).chars().take(50).collect::<String>()
+                );
+            }
+            println!("OCINT PROBE OK ({} items)", s.items.len());
+        }
+        Err(e) => {
+            eprintln!("OCINT PROBE FAIL: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

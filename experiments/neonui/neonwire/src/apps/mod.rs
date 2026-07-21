@@ -1,7 +1,10 @@
 //! App abstraction: each app is a page under the shell chrome.
 
 pub mod camera;
+pub mod files;
 pub mod home;
+pub mod house;
+pub mod intel;
 pub mod music;
 pub mod network;
 pub mod system;
@@ -62,4 +65,6 @@ pub trait App {
     }
     /// Called when the app becomes the active screen.
     fn on_enter(&mut self) {}
+    /// Called when the app is no longer the active screen.
+    fn on_leave(&mut self) {}
 }

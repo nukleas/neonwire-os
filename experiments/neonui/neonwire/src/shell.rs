@@ -1,4 +1,4 @@
-//! The shell: event loop, navigation, status bar, toast.
+//! The shell: event loop, left rail nav, status bar, toast.
 //!
 //! Loop contract (port of neui.c main): poll() the touch fd with timeout =
 //! time-to-next-tick, drain ALL queued events on wake, dispatch taps through
@@ -12,11 +12,12 @@ use neon_gfx::geom::Rect;
 use neon_gfx::input::{poll_fd, Touch};
 use neon_gfx::theme::*;
 
-use crate::apps::home::{Home, TILES};
+use crate::apps::home::{Home, HIT_LAUNCH0, TILES};
 use crate::apps::{App, Ctx, HitMap};
 use crate::backlight::Backlight;
 use crate::collectors::Collectors;
 use crate::power::{self, PowerMgr, PowerState};
+use crate::rail::{self, HIT_RAIL_APP0, RAIL_W};
 use crate::statusbar::{self, BAR_H, HIT_HOME};
 
 enum Screen {
@@ -47,6 +48,9 @@ impl Shell {
             apps: vec![
                 Box::new(crate::apps::system::SystemApp::new()),
                 Box::new(crate::apps::network::NetworkApp::new()),
+                Box::new(crate::apps::house::HouseApp::new()),
+                Box::new(crate::apps::files::FilesApp::new()),
+                Box::new(crate::apps::intel::IntelApp::new()),
                 Box::new(crate::apps::camera::CameraApp::new()),
                 Box::new(crate::apps::music::MusicApp::new()),
             ],
@@ -62,87 +66,139 @@ impl Shell {
         }
     }
 
+    /// Content to the right of the nav rail, under the status bar.
     fn content_area(&self) -> Rect {
-        Rect::new(16, BAR_H + 10, self.fb.xres as i32 - 32, self.fb.yres as i32 - BAR_H - 26)
+        let pad = 8;
+        Rect::new(
+            RAIL_W + pad,
+            BAR_H + pad,
+            self.fb.xres as i32 - RAIL_W - pad * 2,
+            self.fb.yres as i32 - BAR_H - pad * 2,
+        )
+    }
+
+    fn active_app(&self) -> Option<usize> {
+        match self.screen {
+            Screen::Home => None,
+            Screen::App(i) => Some(i),
+        }
     }
 
     fn draw(&mut self) {
         let area = self.content_area();
         self.hits.clear();
-        let snap = &self.collectors.snap;
-        let toast = &mut self.toast;
+        let active = self.active_app();
+        let (title, accent) = match self.screen {
+            Screen::Home => ("", CYAN),
+            Screen::App(i) => (self.apps[i].title(), self.apps[i].accent()),
+        };
         let mut c = self.fb.canvas();
         c.background();
+
+        // status + rail always
+        {
+            let snap = &self.collectors.snap;
+            statusbar::draw(&mut c, snap, title, accent, &mut self.hits);
+            rail::draw(&mut c, active, &mut self.hits);
+        }
+
         match self.screen {
             Screen::Home => {
-                statusbar::draw(&mut c, snap, "", CYAN, &mut self.hits);
-                let ctx = Ctx { snap, toast };
+                let ctx = Ctx { snap: &self.collectors.snap, toast: &mut self.toast };
                 self.home.draw(&mut c, area, &mut self.hits, &ctx);
             }
             Screen::App(i) => {
-                let app = &mut self.apps[i];
-                statusbar::draw(&mut c, snap, app.title(), app.accent(), &mut self.hits);
-                let ctx = Ctx { snap, toast };
-                app.draw(&mut c, area, &mut self.hits, &ctx);
+                let ctx = Ctx { snap: &self.collectors.snap, toast: &mut self.toast };
+                self.apps[i].draw(&mut c, area, &mut self.hits, &ctx);
             }
         }
-        // low-battery warning banner (top, under status bar)
+
+        // low-battery warning banner
         if self.power_state == PowerState::Low {
             let pct = self.collectors.snap.batt_pct.unwrap_or(0);
-            let msg = format!("LOW BATTERY {pct}% — CONNECT CHARGER", pct = pct);
-            let w = c.w;
+            let msg = format!("LOW BATTERY {pct}% - CONNECT CHARGER");
             let bw = msg.len() as i32 * 11 + 40;
-            let x = (w - bw) / 2;
-            c.fill(x, BAR_H + 4, bw, 30, neon_gfx::canvas::mix(BG, RED, 60));
-            c.neonbox(x, BAR_H + 4, bw, 30, RED);
-            c.text(x + 20, BAR_H + 11, &msg, RED, 1);
+            let x = RAIL_W + (c.w - RAIL_W - bw) / 2;
+            c.fill(x, BAR_H + 4, bw, 28, neon_gfx::canvas::mix(BG, RED, 60));
+            c.neonbox(x, BAR_H + 4, bw, 28, RED);
+            c.text(x + 20, BAR_H + 6, &msg, RED, 1);
         }
-        // toast (bottom center, 3 s)
+        // toast
         if let Some((msg, at)) = &self.toast {
             if at.elapsed() < Duration::from_secs(3) {
-                let w = c.w;
                 let tw = msg.len() as i32 * 11 + 40;
-                let x = (w - tw) / 2;
-                let y = c.h - 46;
-                c.fill(x, y, tw, 34, neon_gfx::canvas::mix(BG, AMBER, 40));
-                c.neonbox(x, y, tw, 34, AMBER);
-                c.text(x + 20, y + 6, msg, AMBER, 1);
+                let x = RAIL_W + (c.w - RAIL_W - tw) / 2;
+                let y = c.h - 42;
+                c.fill(x, y, tw, 32, neon_gfx::canvas::mix(BG, AMBER, 40));
+                c.neonbox(x, y, tw, 32, AMBER);
+                c.text(x + 20, y + 4, msg, AMBER, 1);
             }
         }
         c.scanlines(0, 0, c.w, c.h);
         self.fb.present();
     }
 
-    /// Final frame before a critical-battery power-off.
     fn draw_shutdown(&mut self) {
         let pct = self.collectors.snap.batt_pct.unwrap_or(0);
         let mut c = self.fb.canvas();
         c.background();
         let (cx, cy) = (c.w / 2, c.h / 2);
         c.textg(cx - 11 * 9, cy - 40, "BATTERY CRITICAL", RED, 2);
-        c.text(cx - 15 * 6, cy + 6, &format!("{pct}% — SHUTTING DOWN SAFELY", pct = pct), TEXT, 1);
+        c.text(cx - 15 * 6, cy + 6, &format!("{pct}% - SHUTTING DOWN SAFELY"), TEXT, 1);
         c.text(cx - 13 * 6, cy + 30, "flushing disks + poweroff", TEXT_DIM, 1);
         c.scanlines(0, 0, c.w, c.h);
         self.fb.present();
+    }
+
+    fn leave_current_app(&mut self) {
+        if let Screen::App(i) = self.screen {
+            if i < self.apps.len() {
+                self.apps[i].on_leave();
+            }
+        }
+    }
+
+    fn open_app(&mut self, i: usize) {
+        if i >= self.apps.len() {
+            return;
+        }
+        if let Screen::App(cur) = self.screen {
+            if cur == i {
+                return;
+            }
+        }
+        self.leave_current_app();
+        self.screen = Screen::App(i);
+        self.apps[i].on_enter();
+        self.dirty = true;
     }
 
     fn on_tap(&mut self, sx: i32, sy: i32) {
         let Some(id) = self.hits.hit(sx, sy) else {
             return;
         };
+
+        // global nav (rail)
         if id == HIT_HOME {
             if !matches!(self.screen, Screen::Home) {
+                self.leave_current_app();
                 self.screen = Screen::Home;
                 self.dirty = true;
             }
             return;
         }
+        if (HIT_RAIL_APP0..HIT_RAIL_APP0 + TILES.len() as u32).contains(&id) {
+            let i = (id - HIT_RAIL_APP0) as usize;
+            self.open_app(i);
+            return;
+        }
+
         match self.screen {
             Screen::Home => {
-                if (id as usize) < TILES.len() {
-                    self.screen = Screen::App(id as usize);
-                    self.apps[id as usize].on_enter();
-                    self.dirty = true;
+                // compact module launcher on the dashboard
+                if (HIT_LAUNCH0..HIT_LAUNCH0 + TILES.len() as u32).contains(&id) {
+                    let i = (id - HIT_LAUNCH0) as usize;
+                    self.open_app(i);
                 }
             }
             Screen::App(i) => {
@@ -178,7 +234,6 @@ impl Shell {
             }
             for (sx, sy) in taps {
                 eprintln!("tap screen({sx},{sy})");
-                // first tap after blanking only wakes the screen — swallow it
                 if self.backlight.on_activity() {
                     continue;
                 }
@@ -189,23 +244,20 @@ impl Shell {
             if last_tick.elapsed().as_millis() as u64 >= tick_ms {
                 last_tick = Instant::now();
                 self.collectors.refresh();
-                // battery management
                 let snap = &self.collectors.snap;
                 self.power_state = self.power.update(snap.batt_pct, snap.batt_charging);
                 if self.power_state == PowerState::Shutdown {
                     self.backlight.wake();
                     self.draw_shutdown();
-                    power::power_off(); // does not return
+                    power::power_off();
                 }
                 if let Screen::App(i) = self.screen {
                     let snap = &self.collectors.snap;
                     let mut ctx = Ctx { snap, toast: &mut self.toast };
                     self.apps[i].tick(&mut ctx);
                 }
-                self.dirty = true; // per-tick redraw (status values move)
+                self.dirty = true;
             }
-            // skip compositing while the panel is dark — nothing to show, and it
-            // avoids needless PAN flushes / CPU on the idle path
             if self.dirty && !self.backlight.is_blanked() {
                 self.draw();
                 self.dirty = false;
@@ -213,9 +265,6 @@ impl Shell {
         }
     }
 
-    /// Render one frame and dump it (--shot / --tap harness). `ticks` runs
-    /// N 1 Hz tick rounds after each tap so async state machines (wifi scan,
-    /// camprobe) settle before the shot.
     pub fn shot(&mut self, taps: &[(i32, i32)], ticks: u32, path: Option<&str>) {
         self.fb.print_shot_line();
         self.draw();

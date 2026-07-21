@@ -79,6 +79,34 @@ impl Canvas<'_> {
         self.unpack(v)
     }
 
+    /// Blit an RGB888 source buffer (`sw`x`sh`) into dest rect, nearest-neighbor scaled.
+    pub fn blit_rgb(&mut self, dx: i32, dy: i32, dw: i32, dh: i32, src: &[u8], sw: i32, sh: i32) {
+        if sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0 {
+            return;
+        }
+        let x0 = dx.max(0);
+        let y0 = dy.max(0);
+        let x1 = (dx + dw).min(self.w);
+        let y1 = (dy + dh).min(self.h);
+        for j in y0..y1 {
+            let sy = (((j - dy) as i64 * sh as i64) / dh as i64).clamp(0, sh as i64 - 1) as usize;
+            let base = j as usize * self.stride;
+            for i in x0..x1 {
+                let sx =
+                    (((i - dx) as i64 * sw as i64) / dw as i64).clamp(0, sw as i64 - 1) as usize;
+                let s = (sy * sw as usize + sx) * 3;
+                if s + 2 >= src.len() {
+                    continue;
+                }
+                let rgb =
+                    ((src[s] as u32) << 16) | ((src[s + 1] as u32) << 8) | (src[s + 2] as u32);
+                let p = self.pack(rgb).to_ne_bytes();
+                let o = base + i as usize * 4;
+                self.buf[o..o + 4].copy_from_slice(&p);
+            }
+        }
+    }
+
     pub fn fill(&mut self, x: i32, y: i32, w: i32, h: i32, rgb: u32) {
         // clip once, then write rows directly (hot path)
         let x0 = x.max(0);

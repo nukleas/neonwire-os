@@ -71,3 +71,19 @@ else
   echo "  no saved network. Scan: $LAB/wpa_cli -p /tmp/wpa -i wlan0 scan"
   echo "  then: sh $LAB/wifi-join.sh \"SSID\" \"passphrase\""
 fi
+
+say "8. UI — prefer live-updated neonwire from SD (camera stream etc.)"
+# Boot init may start the initramfs /bin/neonwire first. After SD is up, bind the
+# SD copy over it and restart so the latest UI runs without reflashing boot.
+if [ -x $LAB/neonwire ]; then
+  if ! mount | grep -q "on /bin/neonwire "; then
+    mount --bind $LAB/neonwire /bin/neonwire 2>/dev/null && echo "  bind SD neonwire -> /bin/neonwire"
+  else
+    echo "  SD neonwire already bound"
+  fi
+  [ -f /tmp/camgrab_exp ] || echo "4000 128" > /tmp/camgrab_exp
+  killall neonwire camgrab 2>/dev/null
+  echo "  neonwire restart requested (init respawns in ~2s)"
+else
+  echo "  $LAB/neonwire missing — leaving baked-in UI"
+fi

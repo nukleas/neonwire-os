@@ -9,3 +9,7 @@ libc = { workspace = true }
 # strudel pattern engine (validated on-device in M0; sounds via our drum voices)
 strudel-core = { workspace = true }
 strudel-mini = { workspace = true }
+# OCINT public API client (https://ocint.app/api/{stats,items})
+serde = { workspace = true }
+serde_json = { workspace = true }
+ureq = { workspace = true }
