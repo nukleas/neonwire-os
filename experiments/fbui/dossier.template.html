@@ -267,6 +267,9 @@ footer b{color:var(--cyan);font-weight:400}
     <div class="phase e"><span class="dot"></span>
       <div class="head"><span class="tag">Phase E</span><h3>Make it the OS</h3><span class="chip done">Done</span></div>
       <p>Embedded the UI in the initramfs so <strong>init launches it at boot</strong> — the device comes up straight into NEONWIRE, with a crash-loop guard that falls back to a recovery UI. Then reverse-engineered the MTK <span class="mono">logo.bin</span> format and flashed a neon boot splash over the vendor's. The <strong>entire boot chain, first frame to live OS, is ours.</strong></p>
+      <figure style="margin-top:14px"><div class="screen"><video src="%%VIDEO_BOOT%%" poster="%%IMG_BOOTPOSTER%%" autoplay loop muted playsinline
+          aria-label="NEONWIRE booting: the wordmark and boot log resolve into the live home screen"></video></div>
+      <figcaption>Cold start into the home screen — rendered with the shell's own engine, font and glow. (The pre-kernel splash itself is drawn by the bootloader, before Linux.)</figcaption></figure>
     </div>
 
     <div class="phase f"><span class="dot"></span>
@@ -294,8 +297,8 @@ footer b{color:var(--cyan);font-weight:400}
 
   <div class="hero-shot">
     <figure><div class="screen"><video src="%%VIDEO_MP4%%" poster="%%IMG_PLAYING%%" autoplay loop muted playsinline controls
-        aria-label="Screen capture of the tablet playing Zero Day: event rain, spectrum, oscilloscope and VU all animating live"></video></div>
-    <figcaption>Captured off the panel: <b>Zero Day</b> — industrial techno — running live. Everything on the right is drawn from the audio thread as it plays: <span class="m">event rain</span> falling by pitch, a 1024-point spectrum, an oscilloscope, stereo VU, and an honest <b>DSP&nbsp;%&nbsp;/&nbsp;voices</b> readout. The synth loads its drum banks off the SD and computes every sample on one Cortex-A7 core.</figcaption></figure>
+        aria-label="Screen capture of the tablet playing the marble machine: event rain, spectrum, oscilloscope and VU all animating live, with the audio the tablet rendered"></video></div>
+    <figcaption>Captured off the panel — the <b>marble machine</b>, a dense generative piece, running live. The right half is drawn from the audio thread as it plays: <span class="m">event rain</span> falling by pitch, a 1024-point spectrum, an oscilloscope, stereo VU, and an honest <b>DSP&nbsp;%&nbsp;/&nbsp;voices</b> readout. The soundtrack is the exact audio the tablet computed on one Cortex-A7 core — <b>unmute to hear it.</b></figcaption></figure>
   </div>
 
   <div class="readout" role="note" aria-label="measured performance">

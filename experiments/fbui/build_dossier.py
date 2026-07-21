@@ -28,10 +28,16 @@ CHARS = list(range(0x20, 0x7F)) + [
 ]
 
 IMAGES = {
-    "%%IMG_HOME%%":    HERE / "home.png",
-    "%%IMG_PLAYING%%": HERE / "video-poster.png",   # Zero Day still — video poster
-    "%%IMG_SONGS%%":   HERE / "song-list.png",
-    "%%IMG_SEQ%%":     HERE / "music.png",
+    "%%IMG_HOME%%":       HERE / "home.png",
+    "%%IMG_PLAYING%%":    HERE / "video-poster.png",   # marble-machine still (video poster)
+    "%%IMG_BOOTPOSTER%%": HERE / "boot-poster.png",    # boot final frame (video poster)
+    "%%IMG_SONGS%%":      HERE / "song-list.png",
+    "%%IMG_SEQ%%":        HERE / "music.png",
+}
+
+VIDEOS = {
+    "%%VIDEO_MP4%%":  HERE / "sound.mp4",   # marble machine, with audio
+    "%%VIDEO_BOOT%%": HERE / "boot.mp4",     # boot animation (silent)
 }
 
 
@@ -79,15 +85,15 @@ def main() -> None:
         html = html.replace(token, uri)
         print(f"img   {path.name:20s} {n//1024:4d}KB")
 
-    vid = HERE / "sound.mp4"
-    if not vid.is_file():
-        raise SystemExit(f"missing video {vid}")
-    vb = vid.read_bytes()
-    vuri = "data:video/mp4;base64," + base64.b64encode(vb).decode()
-    html = html.replace("%%VIDEO_MP4%%", vuri)
-    print(f"video {vid.name:20s} {len(vb)//1024:4d}KB")
+    for token, vid in VIDEOS.items():
+        if not vid.is_file():
+            raise SystemExit(f"missing video {vid}")
+        vb = vid.read_bytes()
+        vuri = "data:video/mp4;base64," + base64.b64encode(vb).decode()
+        html = html.replace(token, vuri)
+        print(f"video {vid.name:20s} {len(vb)//1024:4d}KB")
 
-    left = [t for t in list(IMAGES) + ["%%FONT_REG%%", "%%FONT_BOLD%%", "%%VIDEO_MP4%%"] if t in html]
+    left = [t for t in list(IMAGES) + list(VIDEOS) + ["%%FONT_REG%%", "%%FONT_BOLD%%"] if t in html]
     if left:
         raise SystemExit(f"unfilled tokens: {left}")
 

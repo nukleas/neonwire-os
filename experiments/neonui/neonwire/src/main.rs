@@ -280,6 +280,7 @@ fn run_shell(args: &[String]) {
     let mut rec_dir = None;
     let mut rec_secs = 6u32;
     let mut rec_fps = 12u32;
+    let mut boot_demo = false;
     let mut taps = Vec::new();
     let mut ticks = 0u32;
     let mut dev = "/dev/input/event4".to_string();
@@ -296,6 +297,7 @@ fn run_shell(args: &[String]) {
                 rec_dir = Some(args[i + 1].clone());
                 i += 1;
             }
+            "--boot-demo" => boot_demo = true,
             "--secs" if i + 1 < args.len() => {
                 rec_secs = args[i + 1].parse().unwrap_or(6);
                 i += 1;
@@ -329,8 +331,12 @@ fn run_shell(args: &[String]) {
     // for camprobe). M6's fire-and-forget wifi spawns will need per-spawn handling.
 
     if let Some(dir) = rec_dir {
-        let mut sh = shell::Shell::new(fb, None);
-        sh.record(&taps, &dir, rec_secs, rec_fps);
+        if boot_demo {
+            record_boot(fb, &dir, rec_secs, rec_fps);
+        } else {
+            let mut sh = shell::Shell::new(fb, None);
+            sh.record(&taps, &dir, rec_secs, rec_fps);
+        }
         return;
     }
     if shot_path.is_some() || !taps.is_empty() {
@@ -342,6 +348,97 @@ fn run_shell(args: &[String]) {
         .map_err(|e| eprintln!("touch {dev}: {e} (running without input)"))
         .ok();
     shell::Shell::new(fb, touch).run();
+}
+
+/// Record-only boot animation — a stylized NEONWIRE cold-start rendered with
+/// the shell's own engine (real font, glow, palette), dumped to frames for a
+/// showcase clip. Does NOT change the device's real boot behavior; the actual
+/// power-on splash is drawn by the bootloader, before Linux, and can't be
+/// screen-captured from software. `secs` frames land in dir/fNNNN.raw, ending
+/// on the live home screen.
+fn record_boot(fb: neon_gfx::fb::Fb, dir: &str, secs: u32, fps: u32) {
+    use neon_gfx::canvas::mix;
+    use neon_gfx::theme::*;
+    let _ = std::fs::create_dir_all(dir);
+    let total = secs * fps;
+    let fpsf = fps as f32;
+
+    // boot-log lines, each with a reveal time (s) and status color
+    let log: [(f32, &str, u32); 6] = [
+        (0.9, "> preloader MT8127 ...... unprotected OK", GREEN),
+        (1.3, "> kernel 3.18.35 + busybox initramfs  OK", GREEN),
+        (1.7, "> framebuffer // touch // rust shell   OK", GREEN),
+        (2.1, "> consys wifi // ssh // tailscale      OK", GREEN),
+        (2.5, "> audio hw:0,5 // strudel synth        OK", GREEN),
+        (2.9, "> booting neon subsystems ..._", CYAN),
+    ];
+
+    let mut fbm = fb;
+    for f in 0..total {
+        let t = f as f32 / fpsf;
+        {
+            let mut c = fbm.canvas();
+            c.background();
+            let cx = c.w / 2;
+
+            // wordmark fades + glows in over the first ~0.8s, then holds
+            let wm_a = (t / 0.8).clamp(0.0, 1.0);
+            if wm_a > 0.02 {
+                let neon = mix(BG, CYAN, (wm_a * 150.0) as i32);
+                let mag = mix(BG, MAGENTA, (wm_a * 150.0) as i32);
+                // "NEONWIRE" scale 3 (11*3=33 px/glyph) + "OS" — center it
+                let s = 3;
+                let gw = 11 * s;
+                let title = "NEONWIRE";
+                let tw = title.len() as i32 * gw + 2 * gw + gw; // + " OS"
+                let x0 = cx - tw / 2;
+                let y0 = 150;
+                c.textg(x0, y0, title, neon, s);
+                c.textg(x0 + title.len() as i32 * gw + gw, y0, "OS", mag, s);
+                // underline sweep
+                let uw = ((tw as f32) * wm_a) as i32;
+                c.hline(x0, y0 + 25 * s + 8, uw, mix(BG, CYAN, 120));
+            }
+
+            // boot log reveals line-by-line, left of center under the wordmark
+            let lx = cx - 300;
+            let mut ly = 250;
+            for (rt, line, col) in log.iter() {
+                if t >= *rt {
+                    let a = ((t - rt) / 0.25).clamp(0.3, 1.0);
+                    let lead = &line[..line.len().min(2)];
+                    let rest = &line[2.min(line.len())..];
+                    c.text(lx, ly, lead, mix(BG, CYAN, 120), 1);
+                    // OK suffix in green, body dim-white
+                    if let Some(p) = rest.rfind("OK") {
+                        let body = &rest[..p];
+                        c.text(lx + 22, ly, body, mix(BG, TEXT2, (a * 200.0) as i32), 1);
+                        c.text(lx + 22 + body.len() as i32 * 11, ly, "OK", *col, 1);
+                    } else {
+                        c.text(lx + 22, ly, rest, mix(BG, *col, (a * 200.0) as i32), 1);
+                    }
+                }
+                ly += 30;
+            }
+        }
+        let path = format!("{dir}/f{f:04}.raw");
+        if let Err(e) = fbm.shot(&path) {
+            eprintln!("record-boot: {e}");
+            break;
+        }
+    }
+
+    // final ~1.5s: cut to the live home screen
+    let mut sh = shell::Shell::new(fbm, None);
+    let hold = (fps * 3 / 2).max(6);
+    for f in total..(total + hold) {
+        sh.draw_public();
+        let path = format!("{dir}/f{f:04}.raw");
+        if sh.fb_shot(&path).is_err() {
+            break;
+        }
+    }
+    println!("REC boot: {} frames -> {dir}", total + hold);
 }
 
 /// M3: touch calibration. --probe prints mapped taps; --evdump prints raw events.

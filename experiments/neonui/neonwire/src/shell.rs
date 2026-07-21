@@ -271,6 +271,16 @@ impl Shell {
     /// tick into `dir/fNNNN.raw` at `fps` for `secs`. Assemble host-side.
     /// Reuses the same buffer `shot()` writes — the only capture path proven
     /// to work on this command-mode panel.
+    /// Draw the current screen into the back buffer (for record helpers).
+    pub fn draw_public(&mut self) {
+        self.draw();
+    }
+
+    /// Dump the back buffer to a file (for record helpers).
+    pub fn fb_shot(&self, path: &str) -> std::io::Result<()> {
+        self.fb.shot(path)
+    }
+
     pub fn record(&mut self, taps: &[(i32, i32)], dir: &str, secs: u32, fps: u32) {
         let _ = std::fs::create_dir_all(dir);
         self.draw();
@@ -288,6 +298,22 @@ impl Shell {
                 self.draw();
             }
         }
+        // If a media app is present, wait until it actually starts playing and
+        // report its position at frame 0 so a host-rendered audio track can be
+        // trimmed to match (REC_T0_MS). Non-media captures just report 0.
+        let t0_ms = if let Screen::App(i) = self.screen {
+            let mut waited = 0;
+            while self.apps[i].media_pos_ms().is_none() && waited < 60 {
+                std::thread::sleep(Duration::from_millis(100));
+                let mut ctx = Ctx { snap: &self.collectors.snap, toast: &mut self.toast };
+                self.apps[i].tick(&mut ctx);
+                waited += 1;
+            }
+            self.apps[i].media_pos_ms().unwrap_or(0)
+        } else {
+            0
+        };
+        println!("REC_T0_MS {t0_ms}");
         let frame_ms = 1000 / fps.max(1);
         let total = secs * fps;
         println!("REC {total} frames -> {dir} ({fps}fps {secs}s)");

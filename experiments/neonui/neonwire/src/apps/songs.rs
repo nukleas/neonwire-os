@@ -284,6 +284,11 @@ impl App for SongsApp {
         MAGENTA
     }
 
+    fn media_pos_ms(&self) -> Option<u32> {
+        (self.player.is_some() && self.stage >= crate::songs::STAGE_PLAYING)
+            .then_some(self.pos_ds * 100)
+    }
+
     fn on_enter(&mut self) {
         if !self.scanned {
             self.folders = scan_folders();

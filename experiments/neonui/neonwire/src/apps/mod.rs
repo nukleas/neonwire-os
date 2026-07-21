@@ -68,4 +68,9 @@ pub trait App {
     fn on_enter(&mut self) {}
     /// Called when the app is no longer the active screen.
     fn on_leave(&mut self) {}
+    /// Playback position in ms if this app is currently playing media —
+    /// used by --record to time-align a host-rendered audio track.
+    fn media_pos_ms(&self) -> Option<u32> {
+        None
+    }
 }

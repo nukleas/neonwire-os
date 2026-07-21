@@ -81,6 +81,57 @@ fn fail(state: &SongState, msg: String) {
     *state.error.lock().unwrap() = Some(msg);
 }
 
+/// Optional capture of the exact PCM sent to the speaker, as a WAV. Set
+/// NEONWIRE_CAP_WAV to a path (used by --record for device-authentic audio).
+/// Writes a header up front, appends raw S16LE stereo, patches sizes on drop.
+struct WavTee {
+    f: std::fs::File,
+    bytes: u32,
+}
+impl WavTee {
+    fn create() -> Option<WavTee> {
+        let path = std::env::var("NEONWIRE_CAP_WAV").ok()?;
+        let mut f = std::fs::File::create(&path).ok()?;
+        Self::write_header(&mut f, 0);
+        Some(WavTee { f, bytes: 0 })
+    }
+    fn write_header(f: &mut std::fs::File, data_len: u32) {
+        use std::io::Write;
+        let rate = RATE;
+        let byte_rate = rate * 4; // 2ch * 2 bytes
+        let mut h = Vec::with_capacity(44);
+        h.extend_from_slice(b"RIFF");
+        h.extend_from_slice(&(36 + data_len).to_le_bytes());
+        h.extend_from_slice(b"WAVEfmt ");
+        h.extend_from_slice(&16u32.to_le_bytes());
+        h.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        h.extend_from_slice(&2u16.to_le_bytes()); // stereo
+        h.extend_from_slice(&rate.to_le_bytes());
+        h.extend_from_slice(&byte_rate.to_le_bytes());
+        h.extend_from_slice(&4u16.to_le_bytes()); // block align
+        h.extend_from_slice(&16u16.to_le_bytes()); // bits
+        h.extend_from_slice(b"data");
+        h.extend_from_slice(&data_len.to_le_bytes());
+        let _ = f.write_all(&h);
+    }
+    fn push(&mut self, ibuf: &[i16]) {
+        use std::io::Write;
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(ibuf.as_ptr() as *const u8, ibuf.len() * 2)
+        };
+        if self.f.write_all(bytes).is_ok() {
+            self.bytes = self.bytes.saturating_add(bytes.len() as u32);
+        }
+    }
+}
+impl Drop for WavTee {
+    fn drop(&mut self) {
+        use std::io::{Seek, SeekFrom};
+        let _ = self.f.seek(SeekFrom::Start(0));
+        Self::write_header(&mut self.f, self.bytes);
+    }
+}
+
 fn song_thread(state: &SongState, src: &str) {
     let song = match neon_songs::eval_song(src) {
         Ok(s) => s,
@@ -106,6 +157,7 @@ fn song_thread(state: &SongState, src: &str) {
     state.online.store(true, Ordering::Relaxed);
 
     r.begin();
+    let mut wav = WavTee::create();
     let mut ibuf = vec![0i16; PERIOD * 2];
     let mut mono = vec![0f32; PERIOD];
     let mut render_ns: u64 = 0;
@@ -146,6 +198,9 @@ fn song_thread(state: &SongState, src: &str) {
         }
         render_ns += tb.elapsed().as_nanos() as u64;
         audio_ns += PERIOD as u64 * 1_000_000_000 / RATE as u64;
+        if let Some(w) = wav.as_mut() {
+            w.push(&ibuf);
+        }
         let _ = pcm.write(&ibuf);
 
         state.pos_ds.store((r.position_secs() * 10.0) as u32, Ordering::Relaxed);
