@@ -151,6 +151,12 @@ impl SongRenderer {
         std::mem::take(&mut self.main_proc.vis_tap)
     }
 
+    /// Number of currently sounding DSP voices.
+    #[must_use]
+    pub fn active_voices(&self) -> usize {
+        self.audio_proc.active_voices()
+    }
+
     /// Bake `duration_seconds` through a callback — host-side testing helper.
     pub fn render<F>(&mut self, duration_seconds: f64, mut on_block: F)
     where

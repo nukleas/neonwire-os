@@ -106,6 +106,8 @@ fn ioctl_writei() -> libc::c_int {
 
 pub struct Pcm {
     fd: libc::c_int,
+    /// Underruns recovered via re-PREPARE (write is &self, hence atomic).
+    xruns: AtomicU32,
 }
 
 impl Pcm {
@@ -115,7 +117,7 @@ impl Pcm {
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
-        let pcm = Pcm { fd };
+        let pcm = Pcm { fd, xruns: AtomicU32::new(0) };
         pcm.configure()?;
         Ok(pcm)
     }
@@ -191,12 +193,18 @@ impl Pcm {
             }
             let e = io::Error::last_os_error();
             if e.raw_os_error() == Some(libc::EPIPE) {
+                self.xruns.fetch_add(1, Ordering::Relaxed);
                 self.prepare()?; // underrun: re-arm and retry
                 continue;
             }
             return Err(e);
         }
         Ok(())
+    }
+
+    /// Underruns recovered since open.
+    pub fn xruns(&self) -> u32 {
+        self.xruns.load(Ordering::Relaxed)
     }
 }
 

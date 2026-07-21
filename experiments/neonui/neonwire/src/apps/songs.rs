@@ -203,6 +203,8 @@ pub struct SongsApp {
     load_pct: u32,
     stage: u8,
     anim: u32, // tick counter for loading animation
+    voices: u32,
+    xruns: u32,
     error: Option<String>,
     // visualizer state
     fft: Fft,
@@ -226,6 +228,8 @@ impl SongsApp {
             load_pct: 0,
             stage: 0,
             anim: 0,
+            voices: 0,
+            xruns: 0,
             error: None,
             fft: Fft::new(),
             scope: Vec::new(),
@@ -297,6 +301,8 @@ impl App for SongsApp {
             self.cycle_c = p.state.cycle_c.load(Ordering::Relaxed);
             self.load_pct = p.state.load_pct.load(Ordering::Relaxed);
             self.stage = p.state.stage.load(Ordering::Relaxed);
+            self.voices = p.state.voices.load(Ordering::Relaxed);
+            self.xruns = p.state.xruns.load(Ordering::Relaxed);
             err = p.state.error.lock().unwrap().take();
             // visualizer inputs
             {
@@ -431,14 +437,18 @@ impl App for SongsApp {
                     y += 34;
                 } else {
                     let secs = self.pos_ds / 10;
-                    let stat = format!(
-                        "{}:{:02}  CYC {:.1}  DSP {:2}%",
+                    let mut stat = format!(
+                        "{}:{:02}  CYC {:.1}  DSP {:2}%  V {:2}",
                         secs / 60,
                         secs % 60,
                         self.cycle_c as f32 / 100.0,
-                        self.load_pct
+                        self.load_pct,
+                        self.voices
                     );
-                    c.text(px, y, &stat, GREEN, 1);
+                    if self.xruns > 0 {
+                        stat.push_str(&format!("  XRUN {}", self.xruns));
+                    }
+                    c.text(px, y, &stat, if self.xruns > 0 { AMBER } else { GREEN }, 1);
                     y += 26;
                 }
             }

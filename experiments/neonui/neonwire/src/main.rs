@@ -219,14 +219,17 @@ fn song_test(path: Option<&str>) {
         blocks += 1;
         let _ = pcm.write(&ibuf);
         if blocks % 43 == 0 {
-            // ~2 s of audio per report at 2048-frame blocks
-            let audio_ns = blocks * audio::PERIOD as u64 * 1_000_000_000 / audio::RATE as u64;
+            // ~2 s of audio per report; load is WINDOWED (per report interval)
+            let audio_ns = 43 * audio::PERIOD as u64 * 1_000_000_000 / audio::RATE as u64;
             println!(
-                "t={:5.1}s cycle={:6.2}  render load {:4.1}%",
+                "t={:5.1}s cycle={:6.2}  load {:4.1}%  voices {:3}  xruns {}",
                 r.position_secs(),
                 r.position_cycles(),
-                render_ns as f64 / audio_ns as f64 * 100.0
+                render_ns as f64 / audio_ns as f64 * 100.0,
+                r.active_voices(),
+                pcm.xruns()
             );
+            render_ns = 0;
         }
     }
 }

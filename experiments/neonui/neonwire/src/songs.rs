@@ -21,7 +21,9 @@ pub struct SongState {
     pub stage: AtomicU8,      // STAGE_* — what start-up is doing right now
     pub pos_ds: AtomicU32,    // playback position, deciseconds
     pub cycle_c: AtomicU32,   // pattern cycle × 100
-    pub load_pct: AtomicU32,  // render cost as % of realtime
+    pub load_pct: AtomicU32,  // render cost as % of realtime, ~1 s window
+    pub voices: AtomicU32,    // currently sounding DSP voices
+    pub xruns: AtomicU32,     // recovered PCM underruns since start
     pub volume: AtomicU32,    // 0..=256, shared with UI
     pub peak_l: AtomicU32,    // block peak × 1000, pre-volume
     pub peak_r: AtomicU32,
@@ -49,6 +51,8 @@ impl SongPlayer {
             pos_ds: AtomicU32::new(0),
             cycle_c: AtomicU32::new(0),
             load_pct: AtomicU32::new(0),
+            voices: AtomicU32::new(0),
+            xruns: AtomicU32::new(0),
             volume: AtomicU32::new(volume.min(256)),
             peak_l: AtomicU32::new(0),
             peak_r: AtomicU32::new(0),
@@ -146,8 +150,13 @@ fn song_thread(state: &SongState, src: &str) {
 
         state.pos_ds.store((r.position_secs() * 10.0) as u32, Ordering::Relaxed);
         state.cycle_c.store((r.position_cycles() * 100.0) as u32, Ordering::Relaxed);
-        if audio_ns > 0 {
+        state.voices.store(r.active_voices() as u32, Ordering::Relaxed);
+        state.xruns.store(pcm.xruns(), Ordering::Relaxed);
+        // windowed load (~1 s): a lifetime average hides both spikes and creep
+        if audio_ns >= 1_000_000_000 {
             state.load_pct.store((render_ns * 100 / audio_ns) as u32, Ordering::Relaxed);
+            render_ns = 0;
+            audio_ns = 0;
         }
     }
 }
