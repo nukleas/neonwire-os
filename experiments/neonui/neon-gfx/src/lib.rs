@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! neon-gfx — framebuffer engine for NEONWIRE OS (port of experiments/fbui/fbgfx.h).
 //!
 //! Hardware contract (DL7006 / mtkfb): the ZS070BE3019B3H7II is a command-mode MIPI

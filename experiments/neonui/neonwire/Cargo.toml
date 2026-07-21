@@ -2,6 +2,9 @@
 name = "neonwire"
 version = "0.1.0"
 edition = "2021"
+# The shell's own source is original, but the shipped binary links neon-songs
+# (AGPL), so the assembled program is AGPL as a whole. See ../LICENSING.md.
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 neon-gfx = { path = "../neon-gfx" }

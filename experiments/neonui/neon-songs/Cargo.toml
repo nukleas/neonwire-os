@@ -2,6 +2,10 @@
 name = "neon-songs"
 version = "0.1.0"
 edition = "2024"
+# AGPL because this crate is a derivative of Strudel (strudel.cc, AGPL-3.0):
+# it links the strudel-rs crates and ports strudel-audio's processor/mapper/
+# channel/scheduler. See ../LICENSING.md.
+license = "AGPL-3.0-or-later"
 
 # Strudel song playback for the DL7006: full .strudel evaluation (strudel-dsl)
 # + synth rendering (strudel-dsp) driven block-by-block into /dev/snd.

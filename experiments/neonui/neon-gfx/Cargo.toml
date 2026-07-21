@@ -2,6 +2,8 @@
 name = "neon-gfx"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "From-scratch framebuffer graphics engine for the MT8127 (command-mode MIPI panel, baked bitmap font, neon draw primitives). Original work, no Strudel lineage."
 
 [dependencies]
 libc = { workspace = true }

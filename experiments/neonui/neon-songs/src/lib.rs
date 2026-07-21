@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Derivative of Strudel (https://strudel.cc, AGPL-3.0). See ../LICENSING.md.
 //! Strudel song playback for NEONWIRE — evaluate a .strudel file, render
 //! synth audio block-by-block for the shell's PCM writer.
 //!

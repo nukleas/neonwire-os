@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// The shipped binary links neon-songs (AGPL); the whole program is AGPL.
 //! neonwire — NEONWIRE OS shell.
 //!
 //! Default mode runs the shell (status bar + home + apps). Diagnostic modes:
