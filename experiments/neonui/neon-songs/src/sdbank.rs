@@ -93,6 +93,25 @@ pub fn decode_wav(b: &[u8]) -> Result<Sample, String> {
     })
 }
 
+/// Process-wide decoded-bank cache: SD reads + WAV decode of a big bank can
+/// take a second or two; every play after the first hits this instead.
+/// Samples hold Arc<[f32]> buffers, so clones are refcount bumps.
+static BANK_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Vec<(u32, Sample)>>>> =
+    std::sync::OnceLock::new();
+
+/// Cached wrapper around [`load_bank`]. Empty results are cached too (a
+/// missing bank stays missing until restart — fine for an SD library).
+pub fn load_bank_cached(root: &str, bank: &str) -> Vec<(u32, Sample)> {
+    let cache = BANK_CACHE.get_or_init(Default::default);
+    let key = format!("{root}/{bank}");
+    if let Some(hit) = cache.lock().unwrap().get(&key) {
+        return hit.clone();
+    }
+    let loaded = load_bank(root, bank);
+    cache.lock().unwrap().insert(key, loaded.clone());
+    loaded
+}
+
 /// Load every .wav in `<root>/<bank>/`, alphabetically. Returns decoded
 /// samples with their slot index; empty if the bank dir doesn't exist.
 pub fn load_bank(root: &str, bank: &str) -> Vec<(u32, Sample)> {

@@ -201,6 +201,8 @@ pub struct SongsApp {
     pos_ds: u32,
     cycle_c: u32,
     load_pct: u32,
+    stage: u8,
+    anim: u32, // tick counter for loading animation
     error: Option<String>,
     // visualizer state
     fft: Fft,
@@ -222,6 +224,8 @@ impl SongsApp {
             pos_ds: 0,
             cycle_c: 0,
             load_pct: 0,
+            stage: 0,
+            anim: 0,
             error: None,
             fft: Fft::new(),
             scope: Vec::new(),
@@ -284,10 +288,12 @@ impl App for SongsApp {
 
     fn tick(&mut self, _ctx: &mut Ctx) {
         let mut err = None;
+        self.anim = self.anim.wrapping_add(1);
         if let Some(p) = &self.player {
             self.pos_ds = p.state.pos_ds.load(Ordering::Relaxed);
             self.cycle_c = p.state.cycle_c.load(Ordering::Relaxed);
             self.load_pct = p.state.load_pct.load(Ordering::Relaxed);
+            self.stage = p.state.stage.load(Ordering::Relaxed);
             err = p.state.error.lock().unwrap().take();
             // visualizer inputs
             {
@@ -401,16 +407,37 @@ impl App for SongsApp {
                 let name = tr.title.strip_prefix("AGENCY OST - ").unwrap_or(&tr.title);
                 c.textg(px, y, &name.chars().take(34).collect::<String>(), MAGENTA, 1);
                 y += 26;
-                let secs = self.pos_ds / 10;
-                let stat = format!(
-                    "{}:{:02}  CYC {:.1}  DSP {:2}%",
-                    secs / 60,
-                    secs % 60,
-                    self.cycle_c as f32 / 100.0,
-                    self.load_pct
-                );
-                c.text(px, y, &stat, GREEN, 1);
-                y += 26;
+                if self.stage < crate::songs::STAGE_PLAYING {
+                    // still starting up — say what and animate
+                    let what = match self.stage {
+                        crate::songs::STAGE_SAMPLES => "LOADING SAMPLES",
+                        _ => "EVALUATING PATTERN",
+                    };
+                    let dots = ".".repeat((self.anim as usize % 4) + 1);
+                    c.text(px, y, &format!("{what}{dots}"), AMBER, 1);
+                    // sweeping activity bar
+                    let bw = (pw - 8).max(40);
+                    let seg = 46;
+                    let pos = (self.anim as i32 * 9) % (bw + seg) - seg; // -seg..bw
+                    let x0 = pos.max(0);
+                    let x1 = (pos + seg).min(bw);
+                    c.neonbox(px, y + 22, bw, 6, mix(BG, AMBER, 90));
+                    if x1 > x0 {
+                        c.fill(px + x0, y + 23, x1 - x0, 4, mix(BG, AMBER, 170));
+                    }
+                    y += 34;
+                } else {
+                    let secs = self.pos_ds / 10;
+                    let stat = format!(
+                        "{}:{:02}  CYC {:.1}  DSP {:2}%",
+                        secs / 60,
+                        secs % 60,
+                        self.cycle_c as f32 / 100.0,
+                        self.load_pct
+                    );
+                    c.text(px, y, &stat, GREEN, 1);
+                    y += 26;
+                }
             }
             None => {
                 c.text(px, y, "TAP A TRACK", TEXT_DIM, 1);

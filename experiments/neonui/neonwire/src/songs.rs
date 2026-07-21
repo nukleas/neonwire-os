@@ -3,7 +3,7 @@
 //! drop it to stop (frees hw:0,5 for the Music app's sequencer and vice versa).
 
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::audio::{speaker_amp, Pcm, PERIOD, RATE};
@@ -11,8 +11,14 @@ use crate::audio::{speaker_amp, Pcm, PERIOD, RATE};
 /// dirt-samples-layout WAV banks on the SD (bank dir -> s("<bank>") slots).
 pub const SAMPLES_DIR: &str = "/mnt/sd/linux-lab/samples";
 
+/// Load-stage values in `SongState::stage` (u8).
+pub const STAGE_EVAL: u8 = 1;
+pub const STAGE_SAMPLES: u8 = 2;
+pub const STAGE_PLAYING: u8 = 3;
+
 pub struct SongState {
     pub online: AtomicBool,   // pcm opened, rendering
+    pub stage: AtomicU8,      // STAGE_* — what start-up is doing right now
     pub pos_ds: AtomicU32,    // playback position, deciseconds
     pub cycle_c: AtomicU32,   // pattern cycle × 100
     pub load_pct: AtomicU32,  // render cost as % of realtime
@@ -39,6 +45,7 @@ impl SongPlayer {
     pub fn start(src: String, volume: u32) -> SongPlayer {
         let state = Arc::new(SongState {
             online: AtomicBool::new(false),
+            stage: AtomicU8::new(STAGE_EVAL),
             pos_ds: AtomicU32::new(0),
             cycle_c: AtomicU32::new(0),
             load_pct: AtomicU32::new(0),
@@ -78,6 +85,7 @@ fn song_thread(state: &SongState, src: &str) {
     let mut r = neon_songs::SongRenderer::new(song.bpm, RATE, 0.9);
     r.set_pattern(song.pattern);
     r.set_block_size(PERIOD);
+    state.stage.store(STAGE_SAMPLES, Ordering::Relaxed);
     let banks = r.load_sd_banks(SAMPLES_DIR, 256.0);
     if !banks.is_empty() {
         eprintln!("songs: loaded SD banks: {banks:?}");
@@ -90,6 +98,7 @@ fn song_thread(state: &SongState, src: &str) {
         Err(e) => return fail(state, format!("pcm: {e}")),
     };
     speaker_amp(true);
+    state.stage.store(STAGE_PLAYING, Ordering::Relaxed);
     state.online.store(true, Ordering::Relaxed);
 
     r.begin();

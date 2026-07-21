@@ -89,7 +89,7 @@ impl SongRenderer {
             .query_missing_banks(Fraction::ZERO, Fraction::from_float(horizon_cycles));
         let mut loaded = Vec::new();
         for bank in &missing.manifest_banks {
-            let samples = crate::sdbank::load_bank(root, bank);
+            let samples = crate::sdbank::load_bank_cached(root, bank);
             if samples.is_empty() {
                 continue;
             }
