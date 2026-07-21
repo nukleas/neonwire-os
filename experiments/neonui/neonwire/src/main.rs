@@ -277,6 +277,9 @@ fn run_shell(args: &[String]) {
     };
     // headless modes: --shot PATH renders one frame; --tap X Y (repeatable) taps first
     let mut shot_path = None;
+    let mut rec_dir = None;
+    let mut rec_secs = 6u32;
+    let mut rec_fps = 12u32;
     let mut taps = Vec::new();
     let mut ticks = 0u32;
     let mut dev = "/dev/input/event4".to_string();
@@ -286,6 +289,19 @@ fn run_shell(args: &[String]) {
         match args[i].as_str() {
             "--shot" if i + 1 < args.len() => {
                 shot_path = Some(args[i + 1].clone());
+                i += 1;
+            }
+            // --record DIR : dump BGRA frames for host-side video assembly
+            "--record" if i + 1 < args.len() => {
+                rec_dir = Some(args[i + 1].clone());
+                i += 1;
+            }
+            "--secs" if i + 1 < args.len() => {
+                rec_secs = args[i + 1].parse().unwrap_or(6);
+                i += 1;
+            }
+            "--fps" if i + 1 < args.len() => {
+                rec_fps = args[i + 1].parse().unwrap_or(12).clamp(1, 30);
                 i += 1;
             }
             "--ticks" if i + 1 < args.len() => {
@@ -312,6 +328,11 @@ fn run_shell(args: &[String]) {
     // NOTE: no SIGCHLD=SIG_IGN here (it would auto-reap and break Child::try_wait
     // for camprobe). M6's fire-and-forget wifi spawns will need per-spawn handling.
 
+    if let Some(dir) = rec_dir {
+        let mut sh = shell::Shell::new(fb, None);
+        sh.record(&taps, &dir, rec_secs, rec_fps);
+        return;
+    }
     if shot_path.is_some() || !taps.is_empty() {
         let mut sh = shell::Shell::new(fb, None);
         sh.shot(&taps, ticks, shot_path.as_deref());

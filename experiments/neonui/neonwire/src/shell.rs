@@ -266,6 +266,52 @@ impl Shell {
         }
     }
 
+    /// Headless video capture: apply nav taps, warm up (so a started song's
+    /// visualizer has real data), then dump one BGRA back-buffer frame per
+    /// tick into `dir/fNNNN.raw` at `fps` for `secs`. Assemble host-side.
+    /// Reuses the same buffer `shot()` writes — the only capture path proven
+    /// to work on this command-mode panel.
+    pub fn record(&mut self, taps: &[(i32, i32)], dir: &str, secs: u32, fps: u32) {
+        let _ = std::fs::create_dir_all(dir);
+        self.draw();
+        for &(sx, sy) in taps {
+            self.on_tap(sx, sy);
+            self.draw(); // refresh hitmap for the new screen before the next tap
+            // let async work (song eval + sample load + pcm open) settle
+            for _ in 0..20 {
+                std::thread::sleep(Duration::from_millis(100));
+                self.collectors.refresh();
+                if let Screen::App(i) = self.screen {
+                    let mut ctx = Ctx { snap: &self.collectors.snap, toast: &mut self.toast };
+                    self.apps[i].tick(&mut ctx);
+                }
+                self.draw();
+            }
+        }
+        let frame_ms = 1000 / fps.max(1);
+        let total = secs * fps;
+        println!("REC {total} frames -> {dir} ({fps}fps {secs}s)");
+        for f in 0..total {
+            let t0 = Instant::now();
+            self.collectors.refresh();
+            if let Screen::App(i) = self.screen {
+                let mut ctx = Ctx { snap: &self.collectors.snap, toast: &mut self.toast };
+                self.apps[i].tick(&mut ctx);
+            }
+            self.draw();
+            let path = format!("{dir}/f{f:04}.raw");
+            if let Err(e) = self.fb.shot(&path) {
+                eprintln!("record: {path}: {e}");
+                break;
+            }
+            let spent = t0.elapsed().as_millis() as u64;
+            if (frame_ms as u64) > spent {
+                std::thread::sleep(Duration::from_millis(frame_ms as u64 - spent));
+            }
+        }
+        println!("REC done");
+    }
+
     pub fn shot(&mut self, taps: &[(i32, i32)], ticks: u32, path: Option<&str>) {
         self.fb.print_shot_line();
         self.draw();

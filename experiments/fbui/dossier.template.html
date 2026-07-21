@@ -136,7 +136,7 @@ section{margin-top:46px}
 figure{margin:16px 0 0}
 .screen{position:relative;border:1px solid var(--border);background:#000;overflow:hidden;
   box-shadow:0 0 0 1px rgba(71,246,255,.06),0 24px 60px -30px rgba(71,246,255,.35)}
-.screen img{display:block;width:100%;height:auto}
+.screen img,.screen video{display:block;width:100%;height:auto}
 .screen::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);opacity:.35}
 figcaption{margin-top:9px;font-size:12.5px;color:var(--dim);letter-spacing:.04em}
@@ -293,8 +293,9 @@ footer b{color:var(--cyan);font-weight:400}
   </div>
 
   <div class="hero-shot">
-    <figure><div class="screen"><img src="%%IMG_PLAYING%%" alt="SONGS app playing Night Drive: live spectrum bars, oscilloscope, event rain, stereo VU, and a DSP/voices readout"></div>
-    <figcaption>The <b>Agency OST</b> — a 13-track cyberpunk album — playing on the tablet. Everything on the right is drawn live from the audio thread: <span class="m">event rain</span>, a 1024-point spectrum, an oscilloscope, stereo VU, and an honest <b>DSP&nbsp;%&nbsp;/&nbsp;voices</b> readout. The synth loads its samples off the SD and runs entirely on-device.</figcaption></figure>
+    <figure><div class="screen"><video src="%%VIDEO_MP4%%" poster="%%IMG_PLAYING%%" autoplay loop muted playsinline controls
+        aria-label="Screen capture of the tablet playing Zero Day: event rain, spectrum, oscilloscope and VU all animating live"></video></div>
+    <figcaption>Captured off the panel: <b>Zero Day</b> — industrial techno — running live. Everything on the right is drawn from the audio thread as it plays: <span class="m">event rain</span> falling by pitch, a 1024-point spectrum, an oscilloscope, stereo VU, and an honest <b>DSP&nbsp;%&nbsp;/&nbsp;voices</b> readout. The synth loads its drum banks off the SD and computes every sample on one Cortex-A7 core.</figcaption></figure>
   </div>
 
   <div class="readout" role="note" aria-label="measured performance">
@@ -358,5 +359,11 @@ footer b{color:var(--cyan);font-weight:400}
     es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}})
   },{threshold:.12,rootMargin:"0px 0px -8% 0px"});
   document.querySelectorAll(".reveal").forEach(function(el){io.observe(el)});
+  // honor reduced-motion: don't autoplay the capture, leave it paused with controls
+  if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    document.querySelectorAll("video[autoplay]").forEach(function(v){
+      v.removeAttribute("autoplay");v.pause();
+    });
+  }
 })();
 </script>
