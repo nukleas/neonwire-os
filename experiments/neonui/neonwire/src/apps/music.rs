@@ -61,6 +61,9 @@ pub struct MusicApp {
     playhead: usize,
     preset: usize,
     save_armed: bool,
+    /// Debounced auto-save: SD vfat writes can spike tens of ms, so edits
+    /// mark dirty and tick()/on_leave() flush instead of writing per tap.
+    dirty_at: Option<std::time::Instant>,
     engine: Option<Engine>,
 }
 
@@ -74,6 +77,7 @@ impl MusicApp {
             playhead: 0,
             preset: 0,
             save_armed: false,
+            dirty_at: None,
             engine: None,
         };
         if let Some(s) = load_state(AUTO_PATH) {
@@ -109,6 +113,16 @@ impl MusicApp {
             if let Err(e) = std::fs::write(path, bytes) {
                 eprintln!("music: save {path}: {e}");
             }
+        }
+    }
+
+    fn mark_dirty(&mut self) {
+        self.dirty_at = Some(std::time::Instant::now());
+    }
+
+    fn flush_save(&mut self) {
+        if self.dirty_at.take().is_some() {
+            self.save(AUTO_PATH);
         }
     }
 
@@ -154,6 +168,14 @@ impl App for MusicApp {
         if let Some(e) = &self.engine {
             self.playhead = e.state.playhead.load(Ordering::Relaxed);
         }
+        // debounced auto-save: flush once edits settle
+        if self.dirty_at.is_some_and(|t| t.elapsed().as_millis() >= 600) {
+            self.flush_save();
+        }
+    }
+
+    fn on_leave(&mut self) {
+        self.flush_save();
     }
 
     fn draw(&mut self, c: &mut Canvas, area: Rect, hits: &mut HitMap, _ctx: &Ctx) {
@@ -296,13 +318,13 @@ impl App for MusicApp {
             HIT_BPM_DN => {
                 self.bpm = self.bpm.saturating_sub(5).max(40);
                 self.sync_engine();
-                self.save(AUTO_PATH);
+                self.mark_dirty();
                 true
             }
             HIT_BPM_UP => {
                 self.bpm = (self.bpm + 5).min(300);
                 self.sync_engine();
-                self.save(AUTO_PATH);
+                self.mark_dirty();
                 true
             }
             id if (HIT_VOL0..HIT_VOL0 + VOL_SEGS).contains(&id) => {
@@ -311,7 +333,7 @@ impl App for MusicApp {
                 let v = (k + 1) * 256 / VOL_SEGS;
                 self.vol = if k == 0 && self.vol <= v { 0 } else { v };
                 self.sync_engine();
-                self.save(AUTO_PATH);
+                self.mark_dirty();
                 true
             }
             HIT_SAVE_MODE => {
@@ -326,14 +348,14 @@ impl App for MusicApp {
                 } else if let Some(s) = load_state(&slot_path(i)) {
                     self.apply(&s);
                     self.sync_engine();
-                    self.save(AUTO_PATH);
+                    self.mark_dirty();
                 }
                 true
             }
             id if (HIT_PRESET0..HIT_PRESET0 + PRESETS.len() as u32).contains(&id) => {
                 self.preset = (id - HIT_PRESET0) as usize;
                 self.sync_engine();
-                self.save(AUTO_PATH);
+                self.mark_dirty();
                 true
             }
             id if (id as usize) < TRACKS * STEPS => {
@@ -341,7 +363,7 @@ impl App for MusicApp {
                 self.grid[t][s] = !self.grid[t][s];
                 self.preset = 0; // editing the grid selects GRID mode
                 self.sync_engine();
-                self.save(AUTO_PATH);
+                self.mark_dirty();
                 true
             }
             _ => false,

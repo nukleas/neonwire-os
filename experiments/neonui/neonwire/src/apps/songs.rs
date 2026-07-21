@@ -190,6 +190,9 @@ fn scan_folders() -> Vec<Folder> {
 
 pub struct SongsApp {
     folders: Vec<Folder>,
+    /// Library scan is deferred to first on_enter: it reads every song file
+    /// off the SD, and doing that in new() slowed boot-to-face for everyone.
+    scanned: bool,
     open: usize,
     playing: Option<(usize, usize)>,
     player: Option<SongPlayer>,
@@ -210,7 +213,8 @@ pub struct SongsApp {
 impl SongsApp {
     pub fn new() -> SongsApp {
         SongsApp {
-            folders: scan_folders(),
+            folders: Vec::new(),
+            scanned: false,
             open: 0,
             playing: None,
             player: None,
@@ -261,6 +265,13 @@ impl App for SongsApp {
 
     fn accent(&self) -> u32 {
         MAGENTA
+    }
+
+    fn on_enter(&mut self) {
+        if !self.scanned {
+            self.folders = scan_folders();
+            self.scanned = true;
+        }
     }
 
     fn tick_ms(&self) -> u64 {
