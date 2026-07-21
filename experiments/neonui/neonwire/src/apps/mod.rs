@@ -7,6 +7,7 @@ pub mod house;
 pub mod intel;
 pub mod music;
 pub mod network;
+pub mod songs;
 pub mod system;
 
 use neon_gfx::canvas::Canvas;

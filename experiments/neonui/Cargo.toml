@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["neon-gfx", "neonwire"]
+members = ["neon-gfx", "neonwire", "neon-songs"]
 
 [workspace.dependencies]
 libc = "0.2"

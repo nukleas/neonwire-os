@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 neon-gfx = { path = "../neon-gfx" }
+neon-songs = { path = "../neon-songs" }
 libc = { workspace = true }
 # strudel pattern engine (validated on-device in M0; sounds via our drum voices)
 strudel-core = { workspace = true }

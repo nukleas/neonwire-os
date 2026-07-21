@@ -53,6 +53,7 @@ impl Shell {
                 Box::new(crate::apps::intel::IntelApp::new()),
                 Box::new(crate::apps::camera::CameraApp::new()),
                 Box::new(crate::apps::music::MusicApp::new()),
+                Box::new(crate::apps::songs::SongsApp::new()),
             ],
             screen: Screen::Home,
             home: Home,

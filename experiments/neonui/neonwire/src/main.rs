@@ -13,6 +13,7 @@ mod ocint;
 mod power;
 mod rail;
 mod shell;
+mod songs;
 mod statusbar;
 mod widgets;
 mod wpa;
@@ -31,6 +32,7 @@ fn main() {
         Some("--probe") => probe_touch(&args, false),
         Some("--evdump") => probe_touch(&args, true),
         Some("--tone") => tone(),
+        Some("--song") => song_test(args.get(2).map(String::as_str)),
         Some("--wpa-probe") => wpa_probe(),
         Some("--power-test") => power_test(),
         Some("--ocint-probe") => ocint_probe(),
@@ -162,6 +164,69 @@ fn wpa_probe() {
         }
     }
     println!("WPA-PROBE DONE");
+}
+
+/// Songs verification: evaluate a .strudel file and stream it to the speaker,
+/// printing the render-cost/realtime ratio (the go/no-go number for the A7).
+fn song_test(path: Option<&str>) {
+    let Some(path) = path else {
+        eprintln!("usage: neonwire --song <file.strudel>");
+        std::process::exit(2);
+    };
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("read {path}: {e}");
+            std::process::exit(1);
+        }
+    };
+    let t0 = std::time::Instant::now();
+    let song = match neon_songs::eval_song(&src) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("eval {path}: {e}");
+            std::process::exit(1);
+        }
+    };
+    println!("eval ok in {:?}: bpm={}", t0.elapsed(), song.bpm);
+
+    let mut r = neon_songs::SongRenderer::new(song.bpm, audio::RATE, 0.9);
+    r.set_pattern(song.pattern);
+    r.set_block_size(audio::PERIOD);
+    audio::speaker_amp(true);
+    let pcm = match audio::Pcm::open() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("pcm open: {e}");
+            std::process::exit(1);
+        }
+    };
+    println!("streaming (ctrl-c to stop)...");
+    r.begin();
+    let mut ibuf = vec![0i16; audio::PERIOD * 2];
+    let mut render_ns: u64 = 0;
+    let mut blocks: u64 = 0;
+    loop {
+        let tb = std::time::Instant::now();
+        let (l, right) = r.next_block();
+        for i in 0..audio::PERIOD {
+            ibuf[i * 2] = (l[i].clamp(-1.0, 1.0) * 28000.0) as i16;
+            ibuf[i * 2 + 1] = (right[i].clamp(-1.0, 1.0) * 28000.0) as i16;
+        }
+        render_ns += tb.elapsed().as_nanos() as u64;
+        blocks += 1;
+        let _ = pcm.write(&ibuf);
+        if blocks % 43 == 0 {
+            // ~2 s of audio per report at 2048-frame blocks
+            let audio_ns = blocks * audio::PERIOD as u64 * 1_000_000_000 / audio::RATE as u64;
+            println!(
+                "t={:5.1}s cycle={:6.2}  render load {:4.1}%",
+                r.position_secs(),
+                r.position_cycles(),
+                render_ns as f64 / audio_ns as f64 * 100.0
+            );
+        }
+    }
 }
 
 /// B2 verification: 2 s of 440 Hz through the raw-ioctl PCM path, no libasound.

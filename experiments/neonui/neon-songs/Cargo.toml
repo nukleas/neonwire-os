@@ -1,0 +1,19 @@
+[package]
+name = "neon-songs"
+version = "0.1.0"
+edition = "2024"
+
+# Strudel song playback for the DL7006: full .strudel evaluation (strudel-dsl)
+# + synth rendering (strudel-dsp) driven block-by-block into /dev/snd.
+# processor/channel/mapper/scheduler are ports of strudel-audio's (which we
+# can't depend on directly: it hard-requires cpal). Synth-only — no soundfont
+# data, no sample banks, no network.
+
+[dependencies]
+strudel-core = { path = "$HOME/src/strudel-rs/crates/strudel-core" }
+strudel-dsp = { path = "$HOME/src/strudel-rs/crates/strudel-dsp" }
+strudel-dsl = { path = "$HOME/src/strudel-rs/crates/strudel-dsl" }
+strudel-internal = { path = "$HOME/src/strudel-rs/crates/strudel-internal" }
+strudel-music-theory = { path = "$HOME/src/strudel-rs/crates/strudel-music-theory" }
+strudel-soundfont = { path = "$HOME/src/strudel-rs/crates/strudel-soundfont", default-features = false, features = ["gm"] }
+rustc-hash = "2"

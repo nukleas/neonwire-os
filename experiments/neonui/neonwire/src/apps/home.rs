@@ -17,7 +17,7 @@ pub struct TileDef {
     pub accent: u32,
 }
 
-pub const TILES: [TileDef; 7] = [
+pub const TILES: [TileDef; 8] = [
     TileDef { title: "SYSTEM", sub: "STATS / PROC / LOGS", accent: CYAN },
     TileDef { title: "NETWORK", sub: "WIFI / TAILSCALE", accent: GREEN },
     TileDef { title: "HOUSE", sub: "HOME ASSISTANT", accent: GREEN },
@@ -25,6 +25,7 @@ pub const TILES: [TileDef; 7] = [
     TileDef { title: "INTEL", sub: "OCINT FEED", accent: AMBER },
     TileDef { title: "CAMERA", sub: "SP2509 OPTICS", accent: MAGENTA },
     TileDef { title: "MUSIC", sub: "STRUDEL SEQ", accent: GOLD },
+    TileDef { title: "SONGS", sub: "AGENCY OST / SYNTH", accent: MAGENTA },
 ];
 
 /// Hit ids for the compact app launcher row on the home dashboard.
