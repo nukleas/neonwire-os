@@ -1,5 +1,6 @@
 //! App abstraction: each app is a page under the shell chrome.
 
+pub mod assistant;
 pub mod camera;
 pub mod files;
 pub mod home;

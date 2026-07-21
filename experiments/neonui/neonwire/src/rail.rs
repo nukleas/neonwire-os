@@ -55,6 +55,7 @@ pub fn draw(c: &mut Canvas, active: Option<usize>, hits: &mut HitMap) {
             5 => "CAM",
             6 => "MUS",
             7 => "SNG",
+            8 => "AI",
             _ => "APP",
         };
         // short label always — full titles overflow the rail width

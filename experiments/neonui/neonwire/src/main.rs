@@ -17,6 +17,7 @@ mod rail;
 mod shell;
 mod songs;
 mod statusbar;
+mod zeroclaw;
 mod widgets;
 mod wpa;
 
