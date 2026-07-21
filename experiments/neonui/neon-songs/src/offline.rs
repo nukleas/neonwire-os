@@ -10,10 +10,11 @@
 //! can drive playback block-by-block into /dev/snd instead of baking a fixed
 //! duration.
 
-use strudel_core::Pattern;
+use strudel_core::{Fraction, Pattern};
 use strudel_dsp::stereo_samples::StereoSlice;
 use strudel_internal::{FastMath as _, Zeroable as _, unlikely};
 
+use crate::mapper::{PitchedSampleKey, SampleKey, SampleSlotIdx};
 use crate::processor::{AudioThreadProcessor, MainThreadProcessor};
 
 const INV_240: f64 = 1.0 / 240.0;
@@ -77,6 +78,39 @@ impl SongRenderer {
     #[must_use]
     pub fn position_cycles(&self) -> f64 {
         self.position_secs() * self.cps
+    }
+
+    /// Load any SD sample banks the pattern references within `horizon_cycles`
+    /// (dirt-samples layout under `root`). Call after `set_pattern`, before
+    /// `begin`. Returns the bank names loaded; unknown banks render silent.
+    pub fn load_sd_banks(&mut self, root: &str, horizon_cycles: f64) -> Vec<String> {
+        let missing = self
+            .main_proc
+            .query_missing_banks(Fraction::ZERO, Fraction::from_float(horizon_cycles));
+        let mut loaded = Vec::new();
+        for bank in &missing.manifest_banks {
+            let samples = crate::sdbank::load_bank(root, bank);
+            if samples.is_empty() {
+                continue;
+            }
+            let bank_str: &str = bank;
+            let n = self.main_proc.register_and_store_batch(
+                samples.iter().map(|(i, s)| {
+                    (
+                        PitchedSampleKey {
+                            identity: SampleKey { bank: bank_str, index: SampleSlotIdx::new(*i) },
+                            pitch: None,
+                            zone_info: None,
+                        },
+                        s.clone(),
+                    )
+                }),
+            );
+            if n > 0 {
+                loaded.push(bank.to_string());
+            }
+        }
+        loaded
     }
 
     /// Arm the pattern clock. Call once before the first `next_block`.

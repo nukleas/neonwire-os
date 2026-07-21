@@ -8,6 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::audio::{speaker_amp, Pcm, PERIOD, RATE};
 
+/// dirt-samples-layout WAV banks on the SD (bank dir -> s("<bank>") slots).
+pub const SAMPLES_DIR: &str = "/mnt/sd/linux-lab/samples";
+
 pub struct SongState {
     pub online: AtomicBool,   // pcm opened, rendering
     pub pos_ds: AtomicU32,    // playback position, deciseconds
@@ -64,6 +67,10 @@ fn song_thread(state: &SongState, src: &str) {
     let mut r = neon_songs::SongRenderer::new(song.bpm, RATE, 0.9);
     r.set_pattern(song.pattern);
     r.set_block_size(PERIOD);
+    let banks = r.load_sd_banks(SAMPLES_DIR, 256.0);
+    if !banks.is_empty() {
+        eprintln!("songs: loaded SD banks: {banks:?}");
+    }
     let pcm = match Pcm::open() {
         Ok(p) => p,
         Err(e) if e.kind() == io::ErrorKind::ResourceBusy => {

@@ -193,6 +193,8 @@ fn song_test(path: Option<&str>) {
     let mut r = neon_songs::SongRenderer::new(song.bpm, audio::RATE, 0.9);
     r.set_pattern(song.pattern);
     r.set_block_size(audio::PERIOD);
+    let banks = r.load_sd_banks(crate::songs::SAMPLES_DIR, 256.0);
+    println!("SD banks loaded: {banks:?}");
     audio::speaker_amp(true);
     let pcm = match audio::Pcm::open() {
         Ok(p) => p,

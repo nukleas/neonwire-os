@@ -11,6 +11,7 @@ mod mapper;
 pub mod offline;
 pub mod processor;
 pub mod scheduler;
+pub mod sdbank;
 
 pub use offline::SongRenderer;
 pub use strudel_core::{Fraction, Hap, Pattern, State, TimeSpan, Value};
