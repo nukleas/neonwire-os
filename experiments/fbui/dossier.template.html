@@ -67,7 +67,7 @@ h1 .os{color:var(--cyan);text-shadow:var(--glow-cyan);animation:pulse 3.4s ease-
 h1 .sfx{color:var(--magenta);text-shadow:var(--glow-mag)}
 @keyframes pulse{0%,100%{text-shadow:0 0 6px rgba(71,246,255,.45),0 0 18px rgba(71,246,255,.2)}
   50%{text-shadow:0 0 10px rgba(71,246,255,.75),0 0 30px rgba(71,246,255,.4)}}
-.tagline{font-size:clamp(15px,2.4vw,19px);color:var(--text2);max-width:60ch;margin:0 0 22px}
+.tagline{font-size:clamp(15px,2.4vw,19px);color:var(--text2);max-width:62ch;margin:0 0 22px}
 .tagline .m{color:var(--magenta)}
 
 h2{font-size:13px;letter-spacing:.24em;text-transform:uppercase;color:var(--cyan);
@@ -124,7 +124,7 @@ section{margin-top:46px}
 .phase h3{margin:0;font-size:18px;font-weight:700;color:var(--text);letter-spacing:.01em}
 .phase p{margin:8px 0 0;color:var(--text2);font-size:14.5px}
 .phase.a{--accent:var(--cyan)} .phase.b{--accent:var(--purple)} .phase.c{--accent:var(--green)}
-.phase.d{--accent:var(--amber)} .phase.e{--accent:var(--magenta)}
+.phase.d{--accent:var(--amber)} .phase.e{--accent:var(--magenta)} .phase.f{--accent:var(--cyan)}
 
 /* ---- status chips ---- */
 .chip{display:inline-flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.12em;
@@ -141,17 +141,32 @@ figure{margin:16px 0 0}
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);opacity:.35}
 figcaption{margin-top:9px;font-size:12.5px;color:var(--dim);letter-spacing:.04em}
 figcaption b{color:var(--cyan);font-weight:400}
+figcaption .m{color:var(--magenta)}
 .gal{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:640px){.gal{grid-template-columns:1fr}}
 
 .hero-shot{margin:26px 0 8px}
 .hero-shot .screen{box-shadow:0 0 0 1px rgba(71,246,255,.1),0 40px 90px -40px rgba(71,246,255,.5)}
 
+/* ---- music: animated equalizer divider (the signature of the sound chapter) ---- */
+.eq{display:flex;align-items:flex-end;gap:3px;height:34px;margin:20px 0 4px}
+.eq i{flex:1;background:linear-gradient(180deg,var(--magenta),var(--cyan));
+  border-radius:1px 1px 0 0;height:20%;transform-origin:bottom;
+  animation:eq 1.1s ease-in-out infinite;opacity:.85}
+@keyframes eq{0%,100%{height:14%}50%{height:96%}}
+
+/* ---- data readout row (the on-device stat line, echoed) ---- */
+.readout{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:16px;
+  font-size:13px;letter-spacing:.06em;font-variant-numeric:tabular-nums}
+.readout span{color:var(--text2)}
+.readout b{color:var(--cyan);font-weight:700}
+.readout .big{color:var(--green)}
+
 /* ---- bug / stack lists ---- */
 .rows{display:flex;flex-direction:column;gap:14px;margin-top:4px}
 .row{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:start}
 .row .lab{color:var(--amber);font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px}
-.row.b .lab{color:var(--magenta)} .row.c .lab{color:var(--cyan)}
+.row.b .lab{color:var(--magenta)} .row.c .lab{color:var(--cyan)} .row.d .lab{color:var(--green)}
 .row p{margin:0;color:var(--text2);font-size:14px}
 @media(max-width:560px){.row{grid-template-columns:1fr;gap:4px}}
 
@@ -174,6 +189,7 @@ footer b{color:var(--cyan);font-weight:400}
   *{animation:none!important}
   .reveal{opacity:1;transform:none}
   .bootlog div{opacity:1}
+  .eq i{height:55%}
 }
 </style>
 
@@ -185,28 +201,28 @@ footer b{color:var(--cyan);font-weight:400}
 <span class="tr"></span><span class="bl"></span>
 
 <header>
-  <div class="eyebrow"><span>Field Dossier</span><b>MEDIATEK MT8127</b><span>REV 2026&#8209;07&#8209;19</span></div>
+  <div class="eyebrow"><span>Field Dossier</span><b>MEDIATEK MT8127</b><span>REV 2026&#8209;07&#8209;20</span></div>
   <h1>NEON<span class="os">WIRE</span> <span class="sfx">OS</span></h1>
-  <p class="tagline">A self-built <span class="m">cyberpunk operating system</span>, hand-brought-up on an undocumented $40 white-label Android tablet — from raw eMMC to a touch UI that boots from its own neon splash.</p>
+  <p class="tagline">A self-built <span class="m">cyberpunk operating system</span>, hand-brought-up on an undocumented $40 white-label Android tablet — from raw eMMC to a touch UI that boots from its own neon splash, joins Wi-Fi, and <span class="m">synthesizes a full soundtrack in real time on its own CPU.</span></p>
 
   <div class="bootlog" aria-hidden="true">
     <div style="animation-delay:.15s">&gt; preloader <b>MT8127</b> ... unprotected <span class="ok">OK</span></div>
-    <div style="animation-delay:.45s">&gt; own flash ... own boot ... <span class="ok">OK</span></div>
-    <div style="animation-delay:.75s">&gt; kernel <b>3.18.35</b> + busybox + usb-acm shell ... <span class="ok">OK</span></div>
-    <div style="animation-delay:1.05s">&gt; framebuffer UI // touch // autostart ... <span class="ok">OK</span></div>
-    <div style="animation-delay:1.35s">&gt; wifi // consys power ... <span class="warn">BLOCKED</span></div>
-    <div style="animation-delay:1.65s">&gt; booting neon subsystems ..._</div>
+    <div style="animation-delay:.42s">&gt; own flash ... own boot ... <span class="ok">OK</span></div>
+    <div style="animation-delay:.69s">&gt; kernel <b>3.18.35</b> + busybox + rust framebuffer shell ... <span class="ok">OK</span></div>
+    <div style="animation-delay:.96s">&gt; wifi // consys ... ssh // tailscale ... <span class="ok">OK</span></div>
+    <div style="animation-delay:1.23s">&gt; audio hw:0,5 // strudel synth // agency OST ... <span class="ok">OK</span></div>
+    <div style="animation-delay:1.50s">&gt; booting neon subsystems ..._</div>
   </div>
 </header>
 
 <div class="hero-shot reveal">
-  <figure><div class="screen"><img src="%%IMG_SPLASH%%" alt="NEONWIRE boot splash on the tablet: glowing wordmark, DL-7006, booting neon subsystems"></div>
-  <figcaption>The pre-kernel boot splash — <b>flashed into the bootloader's logo partition</b>, replacing the vendor's. First frame on power-on.</figcaption></figure>
+  <figure><div class="screen"><img src="%%IMG_HOME%%" alt="NEONWIRE home dashboard: system stats, WLAN0 online, Tailscale node, audio device, module launcher"></div>
+  <figcaption>The living OS at a glance — <b>WLAN0 online</b>, a Tailscale node reachable from anywhere, <b>audio hw:0,5</b> armed, and every module one tap away. All values read live off the kernel.</figcaption></figure>
 </div>
 
 <section class="reveal">
   <h2>What this is</h2>
-  <p class="lead">The <strong>DigiLand DL7006-KB</strong> is a throwaway 7&#8209;inch tablet built around a MediaTek <strong>MT8127</strong>. No source, no support, locked into a stale Android 7. Its one weakness: an <strong>unprotected bootloader</strong>. That crack was enough to take the whole device — dump it, boot our own Linux on it, and give it a face. The result, <strong>NEONWIRE OS</strong>, is a neon framebuffer UI drawn straight to the panel by a handful of static ARM binaries — no X, no Android, no toolkit — deployed over a single serial cable.</p>
+  <p class="lead">The <strong>DigiLand DL7006-KB</strong> is a throwaway 7&#8209;inch tablet built around a MediaTek <strong>MT8127</strong>. No source, no support, locked into a stale Android 7. Its one weakness: an <strong>unprotected bootloader</strong>. That crack was enough to take the whole device — dump it, boot our own Linux on it, give it a face, and keep going until it did things the vendor never shipped. The result, <strong>NEONWIRE OS</strong>, is a neon framebuffer UI drawn straight to the panel by a single static Rust binary — no X, no Android, no toolkit — that now runs Wi-Fi, SSH over Tailscale, a live camera pipeline, and an on-device music engine.</p>
 </section>
 
 <section class="reveal">
@@ -217,15 +233,15 @@ footer b{color:var(--cyan);font-weight:400}
     <div><span class="k">SoC</span><span class="v">MediaTek <b>MT8127</b></span></div>
     <div><span class="k">CPU / GPU</span><span class="v">4&#215; Cortex&#8209;A7 · Mali&#8209;450</span></div>
     <div><span class="k">RAM / eMMC</span><span class="v">1 GiB · 7.1 GiB</span></div>
-    <div><span class="k">Panel</span><span class="v">ZS070BE3019B3H7II · <b>1024&#215;600</b></span></div>
-    <div><span class="k">Panel mode</span><span class="v">32bpp · command&#8209;mode MIPI</span></div>
-    <div><span class="k">Touch</span><span class="v">ICN85xx · type&#8209;A multitouch</span></div>
+    <div><span class="k">Panel</span><span class="v"><b>1024&#215;600</b> · command&#8209;mode MIPI</span></div>
+    <div><span class="k">Audio</span><span class="v">MT6323 codec · <b>hw:0,5</b></span></div>
+    <div><span class="k">Radio</span><span class="v">on&#8209;die CONSYS Wi&#8209;Fi</span></div>
     <div><span class="k">Bootloader</span><span class="v"><b>unprotected</b> preloader</span></div>
   </div></div>
 </section>
 
 <section class="reveal">
-  <h2>How it was taken — five phases</h2>
+  <h2>How it was taken — six phases</h2>
   <div class="tl">
 
     <div class="phase a"><span class="dot"></span>
@@ -245,47 +261,71 @@ footer b{color:var(--cyan);font-weight:400}
 
     <div class="phase d"><span class="dot"></span>
       <div class="head"><span class="tag">Phase D</span><h3>Give it a face</h3><span class="chip done">Done</span></div>
-      <p>A from-scratch framebuffer engine (<span class="mono">fbgfx</span>) with a baked JetBrains&#8209;Mono bitmap font, neon glow, panels and CRT scanlines. Two programs: <strong>neofb</strong>, a system dashboard, and <strong>neui</strong>, a touch launcher with five live panels and a working action bar — all reading real kernel state, cross-compiled static and streamed over serial to the SD card in ~2&#8239;seconds. No reflash to iterate.</p>
+      <p>A from-scratch framebuffer engine with a baked JetBrains&#8209;Mono bitmap font, neon glow, panels and CRT scanlines — later rewritten in <strong>Rust</strong> (<span class="mono">neonwire</span>) as a single static ARM binary. It reverse-engineers the command-mode panel and a type-A touch driver to put a real touch UI on glass, streamed to the SD in ~2&#8239;seconds per iteration. No reflash to iterate.</p>
     </div>
 
     <div class="phase e"><span class="dot"></span>
       <div class="head"><span class="tag">Phase E</span><h3>Make it the OS</h3><span class="chip done">Done</span></div>
-      <p>Embedded the UI in the initramfs so <strong>init launches it at boot</strong> — the device now comes up straight into NeonOS. Then reverse-engineered the MTK <span class="mono">logo.bin</span> format and flashed a neon boot splash over the vendor's. The <strong>entire boot chain, first frame to live OS, is ours.</strong></p>
+      <p>Embedded the UI in the initramfs so <strong>init launches it at boot</strong> — the device comes up straight into NEONWIRE, with a crash-loop guard that falls back to a recovery UI. Then reverse-engineered the MTK <span class="mono">logo.bin</span> format and flashed a neon boot splash over the vendor's. The <strong>entire boot chain, first frame to live OS, is ours.</strong></p>
+    </div>
+
+    <div class="phase f"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase F</span><h3>Bring it to life</h3><span class="chip done">Done</span></div>
+      <p>The wall came down. Reverse-engineered the on-die <strong>CONSYS</strong> radio into working <strong>Wi-Fi + SSH + Tailscale</strong> — reachable from anywhere. Then a camera pipeline off a raw MIPI sensor, power management, and — the showpiece — a full <strong>audio + music stack</strong>: the tablet now computes its own soundtrack in real time. The throwaway tablet does things its vendor never shipped.</p>
     </div>
 
   </div>
 </section>
 
 <section class="reveal">
-  <h2>The face — captured from the panel</h2>
-  <p class="lead">Every pixel below is a real screenshot pulled back off the tablet's framebuffer over the serial link, not a mockup.</p>
-  <div class="gal" style="margin-top:16px">
-    <figure><div class="screen"><img src="%%IMG_DASH%%" alt="neofb dashboard: system + subsystems panels"></div>
-      <figcaption><b>neofb</b> — the system dashboard. Live kernel, cpu, uptime, memory meter, honest subsystem status.</figcaption></figure>
-    <figure><div class="screen"><img src="%%IMG_LAUNCHER%%" alt="neui launcher: nav rail, process list, action bar"></div>
-      <figcaption><b>neui</b> — touch launcher. Nav rail, a live process table, and the SYNC / CLR&#8239;LOG / REMOUNT / REBOOT action bar.</figcaption></figure>
-    <figure><div class="screen"><img src="%%IMG_KERNLOG%%" alt="kernel log panel streaming dmesg"></div>
-      <figcaption><b>KERNLOG</b> — the kernel ring buffer via <span class="mono">klogctl</span>, live. It even catches its own USB traffic.</figcaption></figure>
-    <figure><div class="screen"><img src="%%IMG_NET%%" alt="network panel showing wlan0 offline"></div>
-      <figcaption><b>NETWORK</b> — real interfaces, and an honest <span style="color:var(--magenta)">wlan0 OFFLINE</span>. The UI never lies about the one wall.</figcaption></figure>
+  <h2>Sound — the tablet computes its own music</h2>
+  <p class="lead">The DL7006 has no audio framework — just a bare ALSA device on an <strong>MT6323</strong> codec, no <span class="mono">libasound</span>, no mixer tools. NEONWIRE drives it directly: a hand-rolled raw-ioctl PCM writer on <span class="mono">hw:0,5</span>, and native <span class="mono">controlC0</span> mixer calls to power the speaker amp. On top of that sits a port of a <strong>Strudel</strong> pattern engine — so the tablet doesn't <em>play files</em>, it <strong>synthesizes</strong> them: it evaluates the code of a song and renders every voice, live, on one Cortex-A7 core.</p>
+
+  <div class="eq reveal" aria-hidden="true">
+    <i style="animation-delay:0s"></i><i style="animation-delay:.09s"></i><i style="animation-delay:.19s"></i>
+    <i style="animation-delay:.05s"></i><i style="animation-delay:.24s"></i><i style="animation-delay:.13s"></i>
+    <i style="animation-delay:.30s"></i><i style="animation-delay:.02s"></i><i style="animation-delay:.17s"></i>
+    <i style="animation-delay:.27s"></i><i style="animation-delay:.11s"></i><i style="animation-delay:.21s"></i>
+    <i style="animation-delay:.07s"></i><i style="animation-delay:.33s"></i><i style="animation-delay:.15s"></i>
+    <i style="animation-delay:.25s"></i><i style="animation-delay:.04s"></i><i style="animation-delay:.19s"></i>
+    <i style="animation-delay:.12s"></i><i style="animation-delay:.29s"></i><i style="animation-delay:.08s"></i>
+    <i style="animation-delay:.22s"></i><i style="animation-delay:.16s"></i><i style="animation-delay:.31s"></i>
   </div>
-  <figure style="margin-top:18px"><div class="screen"><img src="%%IMG_CONFIRM%%" alt="reboot confirm state with toast"></div>
-    <figcaption>Touch, decoded from a type&#8209;A multitouch driver and mapped 1:1 to the panel — here arming the confirm-guarded <b>REBOOT</b> tile.</figcaption></figure>
+
+  <div class="hero-shot">
+    <figure><div class="screen"><img src="%%IMG_PLAYING%%" alt="SONGS app playing Night Drive: live spectrum bars, oscilloscope, event rain, stereo VU, and a DSP/voices readout"></div>
+    <figcaption>The <b>Agency OST</b> — a 13-track cyberpunk album — playing on the tablet. Everything on the right is drawn live from the audio thread: <span class="m">event rain</span>, a 1024-point spectrum, an oscilloscope, stereo VU, and an honest <b>DSP&nbsp;%&nbsp;/&nbsp;voices</b> readout. The synth loads its samples off the SD and runs entirely on-device.</figcaption></figure>
+  </div>
+
+  <div class="readout" role="note" aria-label="measured performance">
+    <span>PATTERN EVAL <b>~8 ms</b></span>
+    <span>RENDER LOAD <b class="big">10&#8211;30%</b> of one A7 core</span>
+    <span>OUTPUT <b>44.1 kHz</b> stereo · S16</span>
+    <span>UNDERRUNS <b class="big">0</b></span>
+  </div>
+
+  <div class="gal" style="margin-top:20px">
+    <figure><div class="screen"><img src="%%IMG_SONGS%%" alt="SONGS library: foldered accordion list with the 13-track Agency OST expanded"></div>
+      <figcaption><b>The library.</b> A foldered, scrolling song list — the whole Agency OST plus a beats folder — each track carrying its own liner notes from the source file.</figcaption></figure>
+    <figure><div class="screen"><img src="%%IMG_SEQ%%" alt="MUSIC step sequencer: BD/SD/HH/CP lanes, preset chips, volume bar, save slots"></div>
+      <figcaption><b>The sequencer.</b> A live step grid over the same synth voices — presets, Euclidean rhythms, mini-notation, a volume bar and pattern save slots, all touch-driven.</figcaption></figure>
+  </div>
 </section>
 
 <section class="reveal">
-  <h2>Two hardware ghosts we exorcised</h2>
+  <h2>Hardware ghosts we exorcised</h2>
   <div class="panel amb"><span class="ptag">War stories</span>
   <div class="rows">
-    <div class="row b"><div class="lab">Dead touch</div><p>Taps registered internally but nothing moved. The panel is a <strong>type-A multitouch</strong> device reporting <span class="mono">ABS_MT_POSITION</span> frames — my release-latch stuck after the first touch. Fix: fire on the <span class="mono">BTN_TOUCH</span> press edge, commit on the next <span class="mono">SYN_REPORT</span>.</p></div>
-    <div class="row c"><div class="lab">Frozen glass</div><p>The UI updated in memory but the screen sat still. The LCM is a <strong>command-mode MIPI panel</strong> — it only pushes a frame on a pan/flip, never on a plain <span class="mono">memcpy</span>. Fix: cycle three hardware buffers and <span class="mono">FBIOPAN_DISPLAY</span> every frame. (It's also why memory screenshots looked live while the panel was frozen.)</p></div>
+    <div class="row b"><div class="lab">Dead touch</div><p>Taps registered internally but nothing moved. The panel is a <strong>type-A multitouch</strong> device reporting <span class="mono">ABS_MT_POSITION</span> frames — the release-latch stuck after the first touch. Fix: fire on the <span class="mono">BTN_TOUCH</span> press edge, commit on the next <span class="mono">SYN_REPORT</span>.</p></div>
+    <div class="row c"><div class="lab">Frozen glass</div><p>The UI updated in memory but the screen sat still. The LCM is a <strong>command-mode MIPI panel</strong> — it only pushes a frame on a pan/flip, never on a plain <span class="mono">memcpy</span>. Fix: cycle three hardware buffers and <span class="mono">FBIOPAN_DISPLAY</span> every frame.</p></div>
+    <div class="row d"><div class="lab">Silent amp</div><p>Music played but no sound came out. The speaker amp is a mixer control the old code toggled through a chroot's <span class="mono">amixer</span> — gone after a reboot. Fix: set it natively via <span class="mono">controlC0</span> ioctls, decoding this kernel's 712-byte ALSA ABI struct by hand (arm32 aligns it differently than x86).</p></div>
   </div></div>
 </section>
 
 <section class="reveal">
-  <h2>The wall we haven't broken</h2>
-  <div class="panel mag"><span class="ptag">Honest status</span>
-  <p style="margin-top:2px">Wi-Fi. The integrated <strong>CONSYS</strong> connectivity block won't power on: chip ID reads zero, its rails and bus clock never come up. The stock kernel ships with <span class="mono">CONFIG_MODULES=n</span> (no driver can be loaded) and there are no board sources to rebuild one; a binary power-on patch bootlooped the device. So NeonOS is, for now, gloriously offline — and it says so, in magenta, on its own network panel. <span class="chip off" style="margin-left:6px">wlan0 offline</span></p>
+  <h2>The wall we broke</h2>
+  <div class="panel grn"><span class="ptag">Resolved</span>
+  <p style="margin-top:2px">Wi-Fi. For a long time the integrated <strong>CONSYS</strong> block was the one thing that beat us — chip ID read zero, its rails and bus clock never came up, and the stock kernel ships with no way to load a driver. The break came from reverse-engineering the exact firmware-download and power-on handshake the vendor's userland performs, and replaying it from our own tools. NEONWIRE now brings the radio up on boot, joins a saved network, and runs <strong>dropbear SSH over Tailscale</strong> — the device is reachable from anywhere on Earth. <span class="chip done" style="margin-left:6px">wlan0 online</span></p>
   </div>
 </section>
 
@@ -294,12 +334,12 @@ footer b{color:var(--cyan);font-weight:400}
   <div class="stack">
     <span><b>mtkclient</b> · preloader dump &amp; flash</span>
     <span><b>musl</b> armv7 cross-toolchain</span>
-    <span>static <b>ARM</b> binaries · no libc bloat</span>
-    <span><b>JetBrains Mono</b> baked to a bitmap font</span>
-    <span>serial <b>base64</b> transport → SD</span>
-    <span><b>fbgfx</b> framebuffer engine</span>
-    <span><b>klogctl</b> · statvfs · /proc</span>
-    <span><b>PIL</b> + <b>zlib</b> · MTK logo.bin</span>
+    <span><b>Rust</b> · single static ARM binary</span>
+    <span>raw-ioctl <b>ALSA</b> PCM · no libasound</span>
+    <span><b>Strudel</b> pattern engine · on-device synth</span>
+    <span>SD sample banks · own <b>WAV</b> decoder</span>
+    <span><b>CONSYS</b> Wi-Fi · dropbear · <b>Tailscale</b></span>
+    <span>raw <b>MIPI</b> camera pipeline</span>
     <span>busybox initramfs · MTK boot framing</span>
   </div>
 </section>

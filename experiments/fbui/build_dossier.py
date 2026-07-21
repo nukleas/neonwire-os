@@ -28,12 +28,10 @@ CHARS = list(range(0x20, 0x7F)) + [
 ]
 
 IMAGES = {
-    "%%IMG_SPLASH%%":   SP / "neonos-splash2.png",
-    "%%IMG_DASH%%":     SP / "shot2.png",
-    "%%IMG_LAUNCHER%%": SP / "act-final.png",
-    "%%IMG_KERNLOG%%":  SP / "ui-3.png",
-    "%%IMG_NET%%":      SP / "ui-4.png",
-    "%%IMG_CONFIRM%%":  SP / "act-confirm.png",
+    "%%IMG_HOME%%":    HERE / "home.png",
+    "%%IMG_PLAYING%%": HERE / "song-playing.png",
+    "%%IMG_SONGS%%":   HERE / "song-list.png",
+    "%%IMG_SEQ%%":     HERE / "music.png",
 }
 
 
