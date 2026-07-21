@@ -4,6 +4,14 @@
 with a real 3×3 **color-correction matrix (CCM)** fitted from a photographed color
 target, so colors read accurately instead of washed/muted.
 
+> **STATUS (2026-07-20 evening): PAUSED — no physical color target on hand.**
+> Everything else is ready: `fit_ccm.py` is written and smoke-tested end-to-end
+> (render/pick/solve/measure), the capture command is verified on-device (see
+> corrected command below — the original in this doc was wrong), and geometry is
+> confirmed. Resume = get a ColorChecker (user has no color printer either),
+> light it with the daylight LED, aim via the shell Camera app, then follow
+> the Workflow section. Also note: shoot in daylight-ish light only.
+
 **Why this is the remaining lever:** WB is already correct (stock daylight gains
 1.40/1.0/1.273, baked in). But the sensor's raw RGB primaries are *not* sRGB — the
 color filters are wide and overlapping, so even perfectly white-balanced output looks
@@ -24,9 +32,17 @@ the matrix is a property of the sensor + our WB point, not the scene.
   then `armv7l-linux-musleabihf-gcc -Os -static -no-pie -Wall -o camgrab camgrab.c`
   (from `experiments/camera/`). Static musl → **no libm** (no `pow`/`sqrt`; use integer
   math or LUTs, as the gamma code already does).
-- **Capture:** `camgrab /tmp/frame.raw 14 0` writes full-frame **1550×1194 RAW10**
-  (MIPI packing: 4 px per 5 bytes; high byte at `(x>>2)*5 + (x&3)`, BGGR/RAW_B Bayer).
-  Pull with `ssh root@… cat /tmp/frame.raw > frame.raw`.
+- **Capture (VERIFIED 2026-07-20):**
+  `CAMGRAB_GRABW=1550 CAMGRAB_GAIN=64 ./camgrab --stock-regs /tmp/frame.raw 14 0`
+  writes full-frame **1550×1194 RAW10, stride 1944** (`--stock-regs` is REQUIRED —
+  bare camgrab takes the old RTBC path and truncates at 597/1194 lines; so does any
+  width >1550, and the 1550 auto-cap only applies in `--preview` mode, hence the
+  explicit `CAMGRAB_GRABW=1550`). Confirm `lines_hit~1194/1194 got_frame=1` on stderr.
+  Drive exposure with `CAMGRAB_ESHUTTER` (gain stays 64 = 1×). MIPI packing: 4 px per
+  5 bytes; BGGR/RAW_B Bayer. Pull with `ssh root@… cat /tmp/frame.raw > frame.raw`.
+- **Aiming:** open the shell Camera app (live viewfinder); the host can also pull
+  `/tmp/preview.rgb` ([u32 w][u32 h][RGB888]) over SSH to check framing remotely.
+  Stop the Camera app before still captures (it holds camgrab in a stream loop).
 - **Preview pipeline today** (`write_preview` in `camgrab.c`, ~line 773): 10-bit unpack
   + black-level → 2×2 Bayer-cell average demosaic → **WB in 10-bit linear** (daylight
   358/256/326 Q8, blended 70/30 with gray-world) → luma 3×3 denoise + chroma retention
@@ -74,7 +90,15 @@ where both are **linear** (not gamma-encoded).
   full RAW). Pull `frame.raw` to the host. Grab 2–3 frames to average out noise.
 
 ### B. Fit on host (python + numpy)
-Write `experiments/camera/fit_ccm.py` that:
+**DONE — `experiments/camera/fit_ccm.py` exists and is smoke-tested.** Usage:
+```
+python3 fit_ccm.py render  frame.raw --width 1550 -o chart.png   # framing check
+python3 fit_ccm.py pick    frame.raw --width 1550                # click 4 corners
+python3 fit_ccm.py solve   frame.raw [more.raw] --width 1550 --corners corners.json
+python3 fit_ccm.py measure frame.raw --width 1550 --corners corners.json --ccm 9,q10,ints
+```
+It replicates the device pipeline bit-exactly (BLACK_LVL 16, BGGR 2×2 cell average,
+70/30 daylight+gray-world WB in the same integer math) and does:
 1. Unpacks RAW10 → 10-bit Bayer → demosaic → applies **the same black-level + WB** the
    device uses (so the fit matches the live pipeline). Keep it **linear** (no gamma).
 2. Locates the 24 patch centers. **Manual is more robust than auto:** print the frame,
@@ -104,8 +128,11 @@ Write `experiments/camera/fit_ccm.py` that:
       B[i] = nb<0?0:nb>1023?1023:nb;
   }
   ```
-- **Remove / neutralize `SAT_BOOST`** (set the chroma stage to 1.0×) so the CCM isn't
-  double-counted. Keep the luma denoise + dark-chroma suppression (noise control, not color).
+- **Neutralize the chroma stage** (drift note: `SAT_BOOST` no longer exists by that name —
+  it's the `sat_cap` chroma-retention in the denoise block, currently capped at 220/256
+  ≈ 0.86×). When the CCM lands, set the low-gain cap to 256 (1.0×) so the CCM isn't
+  fought by desaturation; keep the gain-based rolloff + dark-chroma suppression
+  (noise control, not color).
 - Rebuild, redeploy, done.
 
 ### D. Validate
