@@ -146,6 +146,11 @@ impl SongRenderer {
         self.buf.split_at(block)
     }
 
+    /// Drain the visualizer event tap (events scheduled since last drain).
+    pub fn take_events(&mut self) -> Vec<crate::processor::VisEvent> {
+        std::mem::take(&mut self.main_proc.vis_tap)
+    }
+
     /// Bake `duration_seconds` through a callback — host-side testing helper.
     pub fn render<F>(&mut self, duration_seconds: f64, mut on_block: F)
     where

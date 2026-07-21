@@ -1,7 +1,11 @@
 //! SONGS app — strudel song player. Live-evaluates .strudel files from the SD
-//! (Agency OST et al) and synthesizes them on-device via neon-songs. The
-//! now-playing panel shows the song's own header comment block — the tracks
-//! document their form and intent in-source.
+//! (Agency OST et al) and synthesizes them on-device via neon-songs.
+//!
+//! Library is foldered: each subdir of /mnt/sd/linux-lab/songs is an
+//! accordion section (exactly one open, so the list always fits the panel).
+//! The now-playing panel runs an event rain (pattern triggers falling by
+//! pitch, colored by sound), a 16-band spectrum, oscilloscope and VU — all
+//! fed from the audio thread's taps, ~12 fps, negligible next to the DSP.
 
 use std::sync::atomic::Ordering;
 
@@ -13,14 +17,17 @@ use super::{App, Ctx, HitId, HitMap};
 use crate::songs::SongPlayer;
 
 const SONGS_DIR: &str = "/mnt/sd/linux-lab/songs";
-const HIT_TRACK0: HitId = 0xA100; // ..+tracks
+const HIT_TRACK0: HitId = 0xA100; // + folder*64 + track
+const HIT_FOLDER0: HitId = 0xA300; // ..+folders
 const HIT_VOL0: HitId = 0xA020; // ..+VOL_SEGS-1
 const VOL_SEGS: u32 = 12;
 const MAX_DESC: usize = 14;
 
-// ---- visualizer: 1024-pt FFT -> 16 log bands, scope, VU ----
+// ---- visualizer: 1024-pt FFT -> 16 log bands, event rain, scope, VU ----
 const FFT_N: usize = 1024;
 const BANDS: usize = 16;
+const RAIN_FALL_SECS: f32 = 1.5;
+const RAIN_COLORS: [u32; 6] = [CYAN, MAGENTA, GREEN, AMBER, GOLD, BLUE];
 
 struct Fft {
     rev: Vec<usize>,
@@ -86,10 +93,23 @@ impl Fft {
     }
 }
 
+/// One falling event in the rain view.
+struct Drop {
+    t: f32, // fire time, renderer seconds
+    x01: f32,
+    gain: f32,
+    color: u32,
+}
+
 struct TrackMeta {
     path: String,
     title: String,
     desc: Vec<String>, // header comment block, ASCII-sanitized
+}
+
+struct Folder {
+    name: String,
+    tracks: Vec<TrackMeta>,
 }
 
 /// Bitmap font is ASCII: swap the typographic chars the songs use, drop the rest.
@@ -107,44 +127,71 @@ fn ascii(s: &str) -> String {
     out
 }
 
-fn scan_tracks() -> Vec<TrackMeta> {
-    let mut paths: Vec<String> = std::fs::read_dir(SONGS_DIR)
+fn read_track(path: String) -> TrackMeta {
+    let src = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines = src.lines();
+    let title = lines
+        .next()
+        .and_then(|l| l.strip_prefix("//"))
+        .map(|l| ascii(l.trim()))
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| {
+            path.rsplit('/').next().unwrap_or(&path).trim_end_matches(".strudel").into()
+        });
+    let desc: Vec<String> = lines
+        .take_while(|l| l.starts_with("//"))
+        .map(|l| ascii(l.trim_start_matches('/').strip_prefix(' ').unwrap_or_else(|| l.trim_start_matches('/'))))
+        .take(MAX_DESC)
+        .collect();
+    TrackMeta { path, title, desc }
+}
+
+fn strudels_in(dir: &str) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(|e| {
                 let p = e.ok()?.path();
                 let s = p.to_str()?;
-                s.ends_with(".strudel").then(|| s.to_string())
+                (p.is_file() && s.ends_with(".strudel")).then(|| s.to_string())
             })
             .collect()
         })
         .unwrap_or_default();
-    paths.sort();
-    paths
-        .into_iter()
-        .map(|path| {
-            let src = std::fs::read_to_string(&path).unwrap_or_default();
-            let mut lines = src.lines();
-            let title = lines
-                .next()
-                .and_then(|l| l.strip_prefix("//"))
-                .map(|l| ascii(l.trim()))
-                .filter(|l| !l.is_empty())
-                .unwrap_or_else(|| {
-                    path.rsplit('/').next().unwrap_or(&path).trim_end_matches(".strudel").into()
-                });
-            let desc: Vec<String> = lines
-                .take_while(|l| l.starts_with("//"))
-                .map(|l| ascii(l.trim_start_matches('/').strip_prefix(' ').unwrap_or_else(|| l.trim_start_matches('/'))))
-                .take(MAX_DESC)
-                .collect();
-            TrackMeta { path, title, desc }
+    v.sort();
+    v
+}
+
+fn scan_folders() -> Vec<Folder> {
+    let mut folders = Vec::new();
+    let mut subdirs: Vec<String> = std::fs::read_dir(SONGS_DIR)
+        .map(|rd| {
+            rd.filter_map(|e| {
+                let p = e.ok()?.path();
+                p.is_dir().then(|| p.to_str().map(String::from))?
+            })
+            .collect()
         })
-        .collect()
+        .unwrap_or_default();
+    subdirs.sort();
+    for d in subdirs {
+        let tracks: Vec<TrackMeta> = strudels_in(&d).into_iter().map(read_track).collect();
+        if !tracks.is_empty() {
+            let name = d.rsplit('/').next().unwrap_or(&d).to_ascii_uppercase();
+            folders.push(Folder { name, tracks });
+        }
+    }
+    // loose files in the root form a trailing MISC section
+    let loose: Vec<TrackMeta> = strudels_in(SONGS_DIR).into_iter().map(read_track).collect();
+    if !loose.is_empty() {
+        folders.push(Folder { name: "MISC".into(), tracks: loose });
+    }
+    folders
 }
 
 pub struct SongsApp {
-    tracks: Vec<TrackMeta>,
-    playing: Option<usize>,
+    folders: Vec<Folder>,
+    open: usize,
+    playing: Option<(usize, usize)>,
     player: Option<SongPlayer>,
     vol: u32,
     // mirrored from the player each tick
@@ -157,12 +204,14 @@ pub struct SongsApp {
     scope: Vec<f32>,
     spectrum: [f32; BANDS],
     vu: [f32; 2],
+    drops: Vec<Drop>,
 }
 
 impl SongsApp {
     pub fn new() -> SongsApp {
         SongsApp {
-            tracks: scan_tracks(),
+            folders: scan_folders(),
+            open: 0,
             playing: None,
             player: None,
             vol: 208,
@@ -174,6 +223,7 @@ impl SongsApp {
             scope: Vec::new(),
             spectrum: [0.0; BANDS],
             vu: [0.0; 2],
+            drops: Vec::new(),
         }
     }
 
@@ -183,19 +233,24 @@ impl SongsApp {
         self.pos_ds = 0;
         self.cycle_c = 0;
         self.load_pct = 0;
+        self.drops.clear();
     }
 
-    fn play(&mut self, idx: usize) {
+    fn play(&mut self, f: usize, t: usize) {
         self.stop();
         self.error = None;
-        let Some(t) = self.tracks.get(idx) else { return };
-        match std::fs::read_to_string(&t.path) {
+        let Some(track) = self.folders.get(f).and_then(|fo| fo.tracks.get(t)) else { return };
+        match std::fs::read_to_string(&track.path) {
             Ok(src) => {
                 self.player = Some(SongPlayer::start(src, self.vol));
-                self.playing = Some(idx);
+                self.playing = Some((f, t));
             }
             Err(e) => self.error = Some(format!("read: {e}")),
         }
+    }
+
+    fn now_secs(&self) -> f32 {
+        self.pos_ds as f32 / 10.0
     }
 }
 
@@ -223,7 +278,7 @@ impl App for SongsApp {
             self.cycle_c = p.state.cycle_c.load(Ordering::Relaxed);
             self.load_pct = p.state.load_pct.load(Ordering::Relaxed);
             err = p.state.error.lock().unwrap().take();
-            // visualizer inputs: copy the scope block, fold in peaks
+            // visualizer inputs
             {
                 let s = p.state.scope.lock().unwrap();
                 self.scope.clear();
@@ -242,6 +297,28 @@ impl App for SongsApp {
                     self.spectrum[b] = bands[b].max(self.spectrum[b] * 0.80);
                 }
             }
+            // event rain intake
+            let events = std::mem::take(&mut *p.state.events.lock().unwrap());
+            for e in events {
+                // pitched events spread by note (24..96); unpitched by tag hash
+                let x01 = if e.note.is_finite() && e.note > 0.0 {
+                    ((e.note - 24.0) / 72.0).clamp(0.0, 1.0)
+                } else {
+                    (e.tag % 97) as f32 / 97.0
+                };
+                self.drops.push(Drop {
+                    t: e.time as f32,
+                    x01,
+                    gain: e.gain.clamp(0.1, 1.2),
+                    color: RAIN_COLORS[(e.tag % RAIN_COLORS.len() as u32) as usize],
+                });
+            }
+            let now = self.now_secs();
+            self.drops.retain(|d| now - d.t < RAIN_FALL_SECS && d.t - now < 2.0);
+            if self.drops.len() > 200 {
+                let excess = self.drops.len() - 200;
+                self.drops.drain(..excess);
+            }
         }
         if let Some(e) = err {
             self.error = Some(e);
@@ -255,31 +332,49 @@ impl App for SongsApp {
         let tx = area.x + 24;
         let ty = area.y + 38;
         let list_w = (area.w * 2 / 5).clamp(280, 380);
+        let list_bot = area.y + area.h - 20;
 
-        // track list
-        if self.tracks.is_empty() {
+        // foldered track list — accordion: exactly one folder open
+        if self.folders.is_empty() {
             c.text(tx, ty, "NO SONGS ON SD", TEXT_DIM, 1);
             c.text(tx, ty + 22, SONGS_DIR, TEXT_DIM, 1);
         }
-        let row_h = 30;
-        for (i, t) in self.tracks.iter().enumerate() {
-            let y = ty + i as i32 * row_h;
-            if y + row_h > area.y + area.h - 20 {
+        let row_h = 28;
+        let mut y = ty;
+        for (fi, folder) in self.folders.iter().enumerate() {
+            if y + row_h > list_bot {
                 break;
             }
-            let r = Rect::new(tx, y, list_w, row_h - 4);
-            let on = self.playing == Some(i);
-            if on {
-                c.fill(r.x, r.y, r.w, r.h, mix(BG, MAGENTA, 45));
-                c.neonbox(r.x, r.y, r.w, r.h, MAGENTA);
+            let fr = Rect::new(tx, y, list_w, row_h - 4);
+            let open = fi == self.open;
+            let mark = if open { "v" } else { ">" };
+            c.fill(fr.x, fr.y, fr.w, fr.h, mix(BG, BG2, 160));
+            c.neonbox(fr.x, fr.y, fr.w, fr.h, if open { mix(BG, MAGENTA, 140) } else { mix(BG, BORDER, 140) });
+            c.text(fr.x + 8, fr.y + 4, mark, MAGENTA, 1);
+            let label = format!("{} ({})", folder.name, folder.tracks.len());
+            c.text(fr.x + 26, fr.y + 4, &label.chars().take(26).collect::<String>(), if open { MAGENTA } else { TEXT2 }, 1);
+            hits.add(fr, HIT_FOLDER0 + fi as u32);
+            y += row_h;
+            if !open {
+                continue;
             }
-            let marker = if on { ">" } else { " " };
-            c.text(r.x + 6, r.y + 5, marker, MAGENTA, 1);
-            // list shows the short name: strip the "AGENCY OST - " prefix
-            let name = t.title.strip_prefix("AGENCY OST - ").unwrap_or(&t.title);
-            let name: String = name.chars().take(30).collect();
-            c.text(r.x + 22, r.y + 5, &name, if on { MAGENTA } else { TEXT2 }, 1);
-            hits.add(r, HIT_TRACK0 + i as u32);
+            for (ti, t) in folder.tracks.iter().enumerate() {
+                if y + row_h > list_bot {
+                    break;
+                }
+                let r = Rect::new(tx + 10, y, list_w - 10, row_h - 4);
+                let on = self.playing == Some((fi, ti));
+                if on {
+                    c.fill(r.x, r.y, r.w, r.h, mix(BG, MAGENTA, 45));
+                    c.neonbox(r.x, r.y, r.w, r.h, MAGENTA);
+                }
+                c.text(r.x + 6, r.y + 4, if on { ">" } else { " " }, MAGENTA, 1);
+                let name = t.title.strip_prefix("AGENCY OST - ").unwrap_or(&t.title);
+                let name: String = name.chars().take(28).collect();
+                c.text(r.x + 20, r.y + 4, &name, if on { MAGENTA } else { TEXT2 }, 1);
+                hits.add(r, HIT_TRACK0 + (fi * 64 + ti) as u32);
+                y += row_h;
+            }
         }
 
         // now-playing panel
@@ -290,9 +385,9 @@ impl App for SongsApp {
         }
         let mut y = ty;
         match self.playing {
-            Some(i) => {
-                let t = &self.tracks[i];
-                let name = t.title.strip_prefix("AGENCY OST - ").unwrap_or(&t.title);
+            Some((f, t)) => {
+                let tr = &self.folders[f].tracks[t];
+                let name = tr.title.strip_prefix("AGENCY OST - ").unwrap_or(&tr.title);
                 c.textg(px, y, &name.chars().take(34).collect::<String>(), MAGENTA, 1);
                 y += 26;
                 let secs = self.pos_ds / 10;
@@ -331,8 +426,27 @@ impl App for SongsApp {
 
         // ---- visualizer (only while playing) ----
         if self.playing.is_some() {
+            // EVENT RAIN — triggers fall by pitch, colored by sound
+            let rain_h = 96;
+            let rw = pw - 8;
+            c.neonbox(px, y, rw, rain_h, mix(BG, MAGENTA, 60));
+            let now = self.now_secs();
+            for d in &self.drops {
+                let age = now - d.t;
+                if !(0.0..RAIN_FALL_SECS).contains(&age) {
+                    continue;
+                }
+                let fy = y + 2 + (age / RAIN_FALL_SECS * (rain_h - 6) as f32) as i32;
+                let fx = px + 3 + (d.x01 * (rw - 8) as f32) as i32;
+                let bright = ((1.0 - age / RAIN_FALL_SECS) * d.gain.min(1.0) * 100.0) as i32;
+                // head + fading trail upward
+                c.fill(fx, fy, 3, 3, mix(BG, WHITE, 120 + bright));
+                c.vline(fx + 1, (fy - 10).max(y + 2), 10.min(fy - y - 2), mix(BG, d.color, 60 + bright * 2));
+            }
+            y += rain_h + 8;
+
             // 16-band spectrum
-            let spec_h = 64;
+            let spec_h = 50;
             let bw = (pw / BANDS as i32).clamp(8, 26);
             for (b, v) in self.spectrum.iter().enumerate() {
                 let bh = ((spec_h - 2) as f32 * v) as i32;
@@ -340,13 +454,12 @@ impl App for SongsApp {
                 let heat = (*v * 100.0) as i32;
                 let col = mix(MAGENTA, CYAN, 100 - heat);
                 c.fill(x, y + spec_h - bh, bw - 2, bh.max(1), mix(BG, col, 40 + heat * 2));
-                // peak cap line
                 c.hline(x, y + spec_h - bh - 1, bw - 2, col);
             }
             y += spec_h + 8;
 
             // oscilloscope: per-column min/max of the last block
-            let scope_h = 44;
+            let scope_h = 36;
             let mid = y + scope_h / 2;
             c.hline(px, mid, pw - 8, mix(BG, GREEN, 60));
             if !self.scope.is_empty() {
@@ -376,13 +489,13 @@ impl App for SongsApp {
                 c.neonbox(px + 22, y, pw - 30, 8, mix(BG, BORDER, 140));
                 y += 14;
             }
-            y += 8;
+            y += 6;
         }
 
         // the song's own header comment block — its liner notes
-        if let Some(i) = self.playing {
+        if let Some((f, t)) = self.playing {
             let max_ch = (pw / 11).max(20) as usize;
-            for line in &self.tracks[i].desc {
+            for line in &self.folders[f].tracks[t].desc {
                 if y + 18 > area.y + area.h - 16 {
                     break;
                 }
@@ -403,12 +516,17 @@ impl App for SongsApp {
                 }
                 true
             }
-            id if (HIT_TRACK0..HIT_TRACK0 + self.tracks.len() as u32).contains(&id) => {
-                let i = (id - HIT_TRACK0) as usize;
-                if self.playing == Some(i) {
+            id if (HIT_FOLDER0..HIT_FOLDER0 + self.folders.len() as u32).contains(&id) => {
+                self.open = (id - HIT_FOLDER0) as usize;
+                true
+            }
+            id if (HIT_TRACK0..HIT_TRACK0 + 64 * 16).contains(&id) => {
+                let flat = (id - HIT_TRACK0) as usize;
+                let (f, t) = (flat / 64, flat % 64);
+                if self.playing == Some((f, t)) {
                     self.stop();
                 } else {
-                    self.play(i);
+                    self.play(f, t);
                 }
                 true
             }

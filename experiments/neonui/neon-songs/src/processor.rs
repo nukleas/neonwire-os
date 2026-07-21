@@ -33,6 +33,22 @@ pub struct MainThreadProcessor {
     pub(crate) mapper: SampleMapper,
     /// Old allocations waiting to be dropped after the audio thread moves on.
     trash_pile: Vec<RetiredBankEntry>,
+    /// NEONWIRE addition (not upstream): a tee of scheduled events for the
+    /// event-rain visualizer. Drained by SongRenderer each block; capped so an
+    /// undrained tap can't grow unbounded.
+    pub vis_tap: Vec<VisEvent>,
+}
+
+/// A scheduled trigger, reduced to what the visualizer needs.
+#[derive(Clone, Copy, Debug)]
+pub struct VisEvent {
+    /// Onset in seconds on the renderer clock.
+    pub time: f64,
+    /// MIDI-ish note if the event has one, else f32::NEG_INFINITY.
+    pub note: f32,
+    pub gain: f32,
+    /// FNV-1a hash of the sound/bank name (0 = unnamed).
+    pub tag: u32,
 }
 
 impl MainThreadProcessor {
@@ -44,6 +60,7 @@ impl MainThreadProcessor {
             channel,
             mapper: SampleMapper::new(),
             trash_pile: Vec::new(),
+            vis_tap: Vec::new(),
         }
     }
 
@@ -104,6 +121,15 @@ impl MainThreadProcessor {
                 apply_value_to_event(hap, &mut p);
                 for (key, value) in &hap.context {
                     apply_control_to_event(*key, value, &mut p);
+                }
+
+                // NEONWIRE vis tap (see VisEvent)
+                if self.vis_tap.len() < 512 {
+                    let tag = hap.sound_with_index().map_or(0, |(bank, _)| {
+                        bank.bytes()
+                            .fold(0x811c_9dc5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193))
+                    });
+                    self.vis_tap.push(VisEvent { time, note: p.note, gain: p.gain, tag });
                 }
 
                 if p.s == SoundId::Sample

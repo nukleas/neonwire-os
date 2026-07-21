@@ -22,6 +22,8 @@ pub struct SongState {
     /// Mono downmix of the latest rendered block (PERIOD samples) for the
     /// visualizer. Swapped wholesale each block; UI copies under the lock.
     pub scope: Mutex<Vec<f32>>,
+    /// Scheduled trigger events for the event-rain view; UI drains, capped.
+    pub events: Mutex<Vec<neon_songs::VisEvent>>,
     pub error: Mutex<Option<String>>,
     quit: AtomicBool,
 }
@@ -44,6 +46,7 @@ impl SongPlayer {
             peak_l: AtomicU32::new(0),
             peak_r: AtomicU32::new(0),
             scope: Mutex::new(Vec::new()),
+            events: Mutex::new(Vec::new()),
             error: Mutex::new(None),
             quit: AtomicBool::new(false),
         });
@@ -115,6 +118,15 @@ fn song_thread(state: &SongState, src: &str) {
                 s.resize(PERIOD, 0.0);
             }
             std::mem::swap::<Vec<f32>>(&mut s, &mut mono);
+        }
+        let ev = r.take_events();
+        if !ev.is_empty() {
+            let mut q = state.events.lock().unwrap();
+            q.extend(ev);
+            let len = q.len();
+            if len > 256 {
+                q.drain(..len - 256);
+            }
         }
         if mono.len() != PERIOD {
             mono.resize(PERIOD, 0.0);
