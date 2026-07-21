@@ -275,6 +275,9 @@ impl App for SongsApp {
         if !self.scanned {
             self.folders = scan_folders();
             self.scanned = true;
+            // pre-warm the sample-bank cache off-thread while the user is
+            // still looking at the track list — first play starts instantly
+            std::thread::spawn(|| neon_songs::sdbank::warm_all(crate::songs::SAMPLES_DIR));
         }
     }
 

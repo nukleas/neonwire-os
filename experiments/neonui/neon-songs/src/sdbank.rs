@@ -112,6 +112,21 @@ pub fn load_bank_cached(root: &str, bank: &str) -> Vec<(u32, Sample)> {
     loaded
 }
 
+/// Pre-warm the cache: load every bank dir under `root`. Meant for a
+/// background thread so even the first play of a song is instant.
+pub fn warm_all(root: &str) {
+    let Ok(rd) = std::fs::read_dir(root) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if let Some(bank) = p.file_name().and_then(|n| n.to_str()) {
+                let n = load_bank_cached(root, bank).len();
+                eprintln!("sdbank: warmed {bank} ({n} samples)");
+            }
+        }
+    }
+}
+
 /// Load every .wav in `<root>/<bank>/`, alphabetically. Returns decoded
 /// samples with their slot index; empty if the bank dir doesn't exist.
 pub fn load_bank(root: &str, bank: &str) -> Vec<(u32, Sample)> {
