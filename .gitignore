@@ -5,13 +5,11 @@
 #          upstream kernel clones, firmware blobs, venvs. See README.
 # =============================================================================
 
-# --- large reference material (not "the OS"; keep locally, too big to sync) ---
-reference/dumps/
-reference/upstream/
-reference/firmware/
-reference/apks/
-reference/blobs/
-# keep the small, high-value captures: reference/android-capture/, reference/probe/
+# --- reference material: NOT published ---
+# RE scaffolding — vendor dumps, firmware, extracted libs, upstream kernel
+# trees, and captured device/logcat logs. Contains proprietary vendor content
+# that is not ours to redistribute. Kept locally only; excluded from the repo.
+reference/
 
 # --- python / external tools ---
 tools/venv/
@@ -72,3 +70,9 @@ zImage*
 experiments/neonui/target/
 experiments/camera/camprobe
 experiments/camera/camdump
+
+# --- camera diagnostic scratch captures (regenerated from camgrab/tooling) ---
+experiments/camera/*.png
+experiments/camera/*.raw
+# --- built dossier (regenerate: python3 experiments/fbui/build_dossier.py) ---
+experiments/fbui/neonwire-dossier.html

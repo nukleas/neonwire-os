@@ -5,7 +5,7 @@
 #
 # Run from the host (device on NeonOS, reachable over Tailscale/SSH).
 set -u
-HOST=root@100.x.y.z
+HOST="${HOST:-root@100.x.y.z}"  # set HOST=root@<your-device-tailscale-ip>
 REF="$(cd "$(dirname "$0")/.." && pwd)/reference/android-capture/camera-live-20260720/proc-isp_reg-preview.txt"
 OUT=/tmp/l1-isp-$(date +%s 2>/dev/null || echo x).txt   # host tmp
 SSH="ssh -o ConnectTimeout=8 $HOST"
