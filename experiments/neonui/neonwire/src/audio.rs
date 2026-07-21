@@ -348,6 +348,7 @@ pub struct SeqState {
     pub spec: Mutex<PatternSpec>,
     pub spec_gen: AtomicU32, // bump after changing spec
     pub bpm: AtomicU32,
+    pub volume: AtomicU32, // master gain, 0..=256 (Q8)
     pub playing: AtomicBool,
     pub playhead: AtomicUsize, // 16th-note position within cycle, for the UI
     pub online: AtomicBool,    // pcm open succeeded
@@ -360,11 +361,12 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn start(spec: PatternSpec, bpm: u32) -> Engine {
+    pub fn start(spec: PatternSpec, bpm: u32, volume: u32) -> Engine {
         let state = Arc::new(SeqState {
             spec: Mutex::new(spec),
             spec_gen: AtomicU32::new(0),
             bpm: AtomicU32::new(bpm),
+            volume: AtomicU32::new(volume.min(256)),
             playing: AtomicBool::new(false),
             playhead: AtomicUsize::new(0),
             online: AtomicBool::new(false),
@@ -399,32 +401,57 @@ impl Noise {
     }
 }
 
-/// One active drum voice: t = samples since trigger.
+/// One active drum voice: t = samples since trigger, lp = one-pole filter
+/// state (HP by subtraction for hats/snare rattle, band color for clap).
 struct Voice {
     track: usize,
     t: u32,
+    lp: f32,
 }
 
-fn voice_sample(track: usize, t: u32, noise: &mut Noise) -> f32 {
-    let ts = t as f32 / RATE as f32;
-    match track {
-        // BD: 150->50 Hz sine sweep, exp decay ~130 ms
+fn voice_sample(v: &mut Voice, noise: &mut Noise) -> f32 {
+    const TAU: f32 = 2.0 * std::f32::consts::PI;
+    let ts = v.t as f32 / RATE as f32;
+    match v.track {
+        // BD: 160->48 Hz sweep with ANALYTIC phase — φ = 2π∫f dt, not 2π·f(t)·t
+        // (the old form warps the sweep as f changes). Click transient + soft
+        // clip for punch, ~250 ms boom.
         0 => {
-            let f = 50.0 + 100.0 * (-ts * 18.0).exp();
-            let ph = 2.0 * std::f32::consts::PI * f * ts;
-            0.9 * ph.sin() * (-ts * 16.0).exp()
+            let tc = 0.028; // sweep time-constant, f = 48 + 112·e^(−t/tc)
+            let ph = TAU * (48.0 * ts + 112.0 * tc * (1.0 - (-ts / tc).exp()));
+            let body = ph.sin() * (-ts * 9.0).exp();
+            let click = 0.5 * noise.next() * (-ts * 400.0).exp();
+            let x = 1.05 * body + click;
+            x / (1.0 + 0.6 * x.abs())
         }
-        // SD: 190 Hz tone + noise, decay ~160 ms
+        // SD: two body modes (176 + 236 Hz) decaying fast under a highpassed
+        // noise rattle that rings longer — tone thwack, noise snap.
         1 => {
-            let tone = (2.0 * std::f32::consts::PI * 190.0 * ts).sin();
-            (0.35 * tone + 0.55 * noise.next()) * (-ts * 14.0).exp()
+            let body = ((TAU * 176.0 * ts).sin() + 0.6 * (TAU * 236.0 * ts).sin())
+                * (-ts * 28.0).exp();
+            let n = noise.next();
+            v.lp += 0.25 * (n - v.lp);
+            let rattle = (n - v.lp) * (-ts * 12.0).exp();
+            0.30 * body + 0.75 * rattle
         }
-        // HH: bright noise (differentiated), very short
-        2 => 0.5 * (noise.next() - noise.next() * 0.5) * (-ts * 60.0).exp(),
-        // CP: three noise bursts
+        // HH: highpassed noise with a 6.3 kHz metallic shimmer, tight decay.
+        2 => {
+            let n = noise.next();
+            v.lp += 0.10 * (n - v.lp);
+            let ring = 1.0 + 0.4 * (TAU * 6300.0 * ts).sin();
+            0.55 * (n - v.lp) * ring * (-ts * 55.0).exp()
+        }
+        // CP: three retriggered bursts 11 ms apart, then a looser tail;
+        // band-colored noise (HP of a slower LP) for the "slap".
         _ => {
-            let burst = ((ts * 90.0) as u32 % 3) as f32;
-            0.6 * noise.next() * (-((ts - burst * 0.011).max(0.0)) * 30.0).exp() * (-ts * 9.0).exp()
+            let n = noise.next();
+            v.lp += 0.35 * (n - v.lp);
+            let env = if ts < 0.033 {
+                (-(ts % 0.011) * 220.0).exp()
+            } else {
+                0.6 * (-(ts - 0.033) * 16.0).exp()
+            };
+            0.85 * (n - v.lp) * env
         }
     }
 }
@@ -496,19 +523,20 @@ fn audio_thread(s: Arc<SeqState>) {
             s.playhead.store(step, Ordering::Relaxed);
         }
 
+        let vol = s.volume.load(Ordering::Relaxed).min(256) as f32 / 256.0;
         let mut tg = triggers.iter().peekable();
         for fi in 0..PERIOD {
             while tg.peek().is_some_and(|(off, _)| *off == fi) {
                 let (_, track) = *tg.next().unwrap();
-                voices.push(Voice { track, t: 0 });
+                voices.push(Voice { track, t: 0, lp: 0.0 });
             }
             let mut acc = 0.0f32;
             for v in voices.iter_mut() {
-                acc += voice_sample(v.track, v.t, &mut noise);
+                acc += voice_sample(v, &mut noise);
                 v.t += 1;
             }
             voices.retain(|v| v.t < RATE / 3); // 330 ms voice lifetime
-            let smp = (acc.clamp(-1.0, 1.0) * 24000.0) as i16;
+            let smp = (acc.clamp(-1.0, 1.0) * 24000.0 * vol) as i16;
             buf[fi * 2] = smp;
             buf[fi * 2 + 1] = smp;
         }

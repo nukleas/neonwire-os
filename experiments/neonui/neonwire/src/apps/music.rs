@@ -26,30 +26,90 @@ const HIT_PLAY: HitId = 0x9000;
 const HIT_BPM_DN: HitId = 0x9001;
 const HIT_BPM_UP: HitId = 0x9002;
 const HIT_PRESET0: HitId = 0x9010; // ..+3
+const HIT_VOL0: HitId = 0x9020; // ..+VOL_SEGS-1
+const HIT_SAVE_MODE: HitId = 0x9030;
+const HIT_SLOT0: HitId = 0x9031; // ..+SLOTS-1
 // step cells: id = track * 16 + step
+
+const VOL_SEGS: u32 = 12;
+const SLOTS: usize = 3;
+/// Persisted on the SD next to the other lab state; survives reboots.
+const AUTO_PATH: &str = "/mnt/sd/linux-lab/music-state.json";
+fn slot_path(i: usize) -> String {
+    format!("/mnt/sd/linux-lab/music-slot{}.json", i + 1)
+}
+
+/// Everything worth keeping across app close / reboot.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct SavedState {
+    bpm: u32,
+    vol: u32,
+    preset: usize,
+    grid: [[bool; STEPS]; TRACKS],
+}
+
+fn load_state(path: &str) -> Option<SavedState> {
+    let raw = std::fs::read(path).ok()?;
+    serde_json::from_slice(&raw).ok()
+}
 
 pub struct MusicApp {
     grid: [[bool; STEPS]; TRACKS],
     playing: bool,
     bpm: u32,
+    vol: u32, // 0..=256 master gain
     playhead: usize,
     preset: usize,
+    save_armed: bool,
     engine: Option<Engine>,
 }
 
 impl MusicApp {
     pub fn new() -> MusicApp {
-        let mut grid = [[false; STEPS]; TRACKS];
-        // seed a classic pattern so the app opens alive
-        for s in (0..STEPS).step_by(4) {
-            grid[0][s] = true;
+        let mut app = MusicApp {
+            grid: [[false; STEPS]; TRACKS],
+            playing: false,
+            bpm: 120,
+            vol: 208,
+            playhead: 0,
+            preset: 0,
+            save_armed: false,
+            engine: None,
+        };
+        if let Some(s) = load_state(AUTO_PATH) {
+            app.apply(&s);
+        } else {
+            // seed a classic pattern so the app opens alive
+            for s in (0..STEPS).step_by(4) {
+                app.grid[0][s] = true;
+            }
+            app.grid[1][4] = true;
+            app.grid[1][12] = true;
+            for s in (2..STEPS).step_by(2) {
+                app.grid[2][s] = true;
+            }
         }
-        grid[1][4] = true;
-        grid[1][12] = true;
-        for s in (2..STEPS).step_by(2) {
-            grid[2][s] = true;
+        app
+    }
+
+    fn snapshot(&self) -> SavedState {
+        SavedState { bpm: self.bpm, vol: self.vol, preset: self.preset, grid: self.grid }
+    }
+
+    fn apply(&mut self, s: &SavedState) {
+        self.grid = s.grid;
+        self.bpm = s.bpm.clamp(40, 300);
+        self.vol = s.vol.min(256);
+        self.preset = s.preset.min(PRESETS.len() - 1);
+    }
+
+    /// Fire-and-forget persist; a failed SD write must never break the app.
+    fn save(&self, path: &str) {
+        if let Ok(bytes) = serde_json::to_vec(&self.snapshot()) {
+            if let Err(e) = std::fs::write(path, bytes) {
+                eprintln!("music: save {path}: {e}");
+            }
         }
-        MusicApp { grid, playing: false, bpm: 120, playhead: 0, preset: 0, engine: None }
     }
 
     fn spec(&self) -> PatternSpec {
@@ -65,6 +125,7 @@ impl MusicApp {
             *e.state.spec.lock().unwrap() = self.spec();
             e.state.spec_gen.fetch_add(1, Ordering::Release);
             e.state.bpm.store(self.bpm, Ordering::Relaxed);
+            e.state.volume.store(self.vol, Ordering::Relaxed);
             e.state.playing.store(self.playing, Ordering::Relaxed);
         }
     }
@@ -144,9 +205,46 @@ impl App for MusicApp {
         let notation = if self.preset == 0 { "<touch grid>" } else { PRESETS[self.preset].1 };
         c.text(px + 14, py + 6, notation, GREEN, 1);
 
+        // volume + pattern slots row
+        let vy = py + 38;
+        c.text(tx, vy + 6, "VOL", TEXT2, 1);
+        let seg_w = 20;
+        for k in 0..VOL_SEGS {
+            let r = Rect::new(tx + 44 + k as i32 * seg_w, vy, seg_w - 3, 26);
+            let lit = self.vol * VOL_SEGS > k * 256;
+            let col = if lit { mix(BG, CYAN, 60 + k as i32 * 10) } else { mix(BG, BG2, 220) };
+            c.fill(r.x, r.y, r.w, r.h, col);
+            c.neonbox(r.x, r.y, r.w, r.h, if lit { CYAN } else { mix(BG, BORDER, 120) });
+            hits.add(r, HIT_VOL0 + k);
+        }
+        let sx = tx + 44 + VOL_SEGS as i32 * seg_w + 30;
+        let save = Rect::new(sx, vy, 66, 26);
+        let sc2 = if self.save_armed { RED } else { BORDER };
+        if self.save_armed {
+            c.fill(save.x, save.y, save.w, save.h, mix(BG, RED, 50));
+        }
+        c.neonbox(save.x, save.y, save.w, save.h, sc2);
+        c.text(save.x + 11, save.y + 4, "SAVE", if self.save_armed { RED } else { TEXT2 }, 1);
+        hits.add(save, HIT_SAVE_MODE);
+        for i in 0..SLOTS {
+            let r = Rect::new(sx + 76 + i as i32 * 36, vy, 30, 26);
+            let exists = std::fs::metadata(slot_path(i)).is_ok();
+            let col = if self.save_armed {
+                RED
+            } else if exists {
+                AMBER
+            } else {
+                mix(BG, BORDER, 120)
+            };
+            c.neonbox(r.x, r.y, r.w, r.h, col);
+            let tcol = if exists || self.save_armed { TEXT } else { TEXT_DIM };
+            c.text(r.x + 10, r.y + 4, &format!("{}", i + 1), tcol, 1);
+            hits.add(r, HIT_SLOT0 + i as u32);
+        }
+
         // step grid
         let gx = area.x + 24;
-        let gy = ty + 90;
+        let gy = ty + 124;
         let gw = area.w - 60;
         let cell = (gw - 60) / STEPS as i32;
         let ch = ((area.h - (gy - area.y) - 30) / TRACKS as i32).min(56);
@@ -182,11 +280,14 @@ impl App for MusicApp {
                 self.playing = !self.playing;
                 if self.playing {
                     if self.engine.is_none() {
-                        self.engine = Some(Engine::start(self.spec(), self.bpm));
+                        self.engine = Some(Engine::start(self.spec(), self.bpm, self.vol));
                     }
                     speaker_amp(true);
                 } else {
                     self.playhead = 0;
+                    // tear the engine down so hw:0,5 is free for the SONGS app
+                    // (Engine::drop joins the thread + closes pcm + amp off)
+                    self.engine = None;
                     speaker_amp(false);
                 }
                 self.sync_engine();
@@ -195,16 +296,44 @@ impl App for MusicApp {
             HIT_BPM_DN => {
                 self.bpm = self.bpm.saturating_sub(5).max(40);
                 self.sync_engine();
+                self.save(AUTO_PATH);
                 true
             }
             HIT_BPM_UP => {
                 self.bpm = (self.bpm + 5).min(300);
                 self.sync_engine();
+                self.save(AUTO_PATH);
+                true
+            }
+            id if (HIT_VOL0..HIT_VOL0 + VOL_SEGS).contains(&id) => {
+                let k = id - HIT_VOL0;
+                // tapping the lone lit first segment again = mute
+                let v = (k + 1) * 256 / VOL_SEGS;
+                self.vol = if k == 0 && self.vol <= v { 0 } else { v };
+                self.sync_engine();
+                self.save(AUTO_PATH);
+                true
+            }
+            HIT_SAVE_MODE => {
+                self.save_armed = !self.save_armed;
+                true
+            }
+            id if (HIT_SLOT0..HIT_SLOT0 + SLOTS as u32).contains(&id) => {
+                let i = (id - HIT_SLOT0) as usize;
+                if self.save_armed {
+                    self.save(&slot_path(i));
+                    self.save_armed = false;
+                } else if let Some(s) = load_state(&slot_path(i)) {
+                    self.apply(&s);
+                    self.sync_engine();
+                    self.save(AUTO_PATH);
+                }
                 true
             }
             id if (HIT_PRESET0..HIT_PRESET0 + PRESETS.len() as u32).contains(&id) => {
                 self.preset = (id - HIT_PRESET0) as usize;
                 self.sync_engine();
+                self.save(AUTO_PATH);
                 true
             }
             id if (id as usize) < TRACKS * STEPS => {
@@ -212,6 +341,7 @@ impl App for MusicApp {
                 self.grid[t][s] = !self.grid[t][s];
                 self.preset = 0; // editing the grid selects GRID mode
                 self.sync_engine();
+                self.save(AUTO_PATH);
                 true
             }
             _ => false,
