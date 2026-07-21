@@ -15,7 +15,11 @@ set +e
 LAB=/mnt/sd/linux-lab
 say(){ echo; echo "==== $* ===="; }
 
-say "0. SD (persistent tools)"
+say "0. loopback + SD (persistent tools)"
+# lo is DOWN on this minimal init — nothing needed it until we ran a local
+# service. Without it, binding 127.0.0.1 fails EADDRNOTAVAIL (cost us a
+# confusing 'Address not available' from the zeroclaw gateway, 2026-07-21).
+ifconfig lo 127.0.0.1 netmask 255.0.0.0 up 2>/dev/null
 mount -t vfat -o rw /dev/mmcblk1p1 /mnt/sd 2>/dev/null
 [ -x $LAB/wmtctl2 ] || { echo "  *** $LAB/wmtctl2 missing — push it first"; exit 1; }
 
@@ -96,4 +100,21 @@ if [ -x $LAB/neonwire ]; then
   echo "  neonwire restart requested (init respawns in ~2s)"
 else
   echo "  $LAB/neonwire missing — leaving baked-in UI"
+fi
+
+say "9. zeroclaw — on-device AI agent gateway (127.0.0.1:42617)"
+# Separate process; the neonwire ASSISTANT app POSTs to /webhook. Needs lo (see
+# step 0) and a provider configured in $LAB/zeroclaw/cfg. Detached so a failure
+# here never blocks the UI.
+ZC=$LAB/zeroclaw/zeroclaw
+if [ -x "$ZC" ]; then
+  if ps | grep -q "[z]eroclaw"; then
+    echo "  already running"
+  else
+    setsid "$ZC" --config-dir $LAB/zeroclaw/cfg gateway start \
+      >/tmp/zc.log 2>&1 </dev/null &
+    echo "  gateway launched (log /tmp/zc.log)"
+  fi
+else
+  echo "  $ZC not present — skipping"
 fi
