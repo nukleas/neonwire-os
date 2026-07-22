@@ -33,6 +33,7 @@ IMAGES = {
     "%%IMG_BOOTPOSTER%%": HERE / "boot-poster.png",    # boot final frame (video poster)
     "%%IMG_SONGS%%":      HERE / "song-list.png",
     "%%IMG_SEQ%%":        HERE / "music.png",
+    "%%IMG_ASSISTANT%%":  HERE / "assistant.png",   # ASSISTANT app + watchdog report
 }
 
 VIDEOS = {

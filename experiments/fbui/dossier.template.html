@@ -125,6 +125,7 @@ section{margin-top:46px}
 .phase p{margin:8px 0 0;color:var(--text2);font-size:14.5px}
 .phase.a{--accent:var(--cyan)} .phase.b{--accent:var(--purple)} .phase.c{--accent:var(--green)}
 .phase.d{--accent:var(--amber)} .phase.e{--accent:var(--magenta)} .phase.f{--accent:var(--cyan)}
+.phase.g{--accent:var(--purple)}
 
 /* ---- status chips ---- */
 .chip{display:inline-flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.12em;
@@ -241,7 +242,7 @@ footer b{color:var(--cyan);font-weight:400}
 </section>
 
 <section class="reveal">
-  <h2>How it was taken — six phases</h2>
+  <h2>How it was taken — seven phases</h2>
   <div class="tl">
 
     <div class="phase a"><span class="dot"></span>
@@ -275,6 +276,11 @@ footer b{color:var(--cyan);font-weight:400}
     <div class="phase f"><span class="dot"></span>
       <div class="head"><span class="tag">Phase F</span><h3>Bring it to life</h3><span class="chip done">Done</span></div>
       <p>The wall came down. Reverse-engineered the on-die <strong>CONSYS</strong> radio into working <strong>Wi-Fi + SSH + Tailscale</strong> — reachable from anywhere. Then a camera pipeline off a raw MIPI sensor, power management, and — the showpiece — a full <strong>audio + music stack</strong>: the tablet now computes its own soundtrack in real time. The throwaway tablet does things its vendor never shipped.</p>
+    </div>
+
+    <div class="phase g"><span class="dot"></span>
+      <div class="head"><span class="tag">Phase G</span><h3>Give it a mind</h3><span class="chip done">Done</span></div>
+      <p>Cross-compiled a whole <strong>agent runtime</strong> — <span class="mono">zeroclaw</span>, 28&#8239;MB static armv7-musl — and ran it <em>on the tablet</em>, behind a local HTTP gateway the shell talks to. There's a touch app with a wake word and speech-to-text, and, running unattended, a <strong>heartbeat that reads the device's own logs every 30&#8239;minutes</strong> and writes up what it finds. The tablet stopped being only a thing we operate. It started reporting on itself.</p>
     </div>
 
   </div>
@@ -317,12 +323,37 @@ footer b{color:var(--cyan);font-weight:400}
 </section>
 
 <section class="reveal">
+  <h2>Mind — the tablet audits itself</h2>
+  <p class="lead">The last thing a 2017 bargain tablet is supposed to run is an AI agent. The stock ARM builds are glibc, so this one was <strong>cross-compiled from source</strong> for <span class="mono">armv7-musl</span> with a lean feature set — a <strong>28&#8239;MB static binary</strong>, built in seven minutes, that runs natively next to the shell and answers on <span class="mono">127.0.0.1:42617</span>. NEONWIRE's <span class="mono">ASSISTANT</span> app is its face: a wake word, push-to-talk, speech-to-text, and a keyboard. But the interesting part isn't the chat — it's what runs when nobody's watching.</p>
+
+  <div class="hero-shot">
+    <figure><div class="screen"><img src="%%IMG_ASSISTANT%%" alt="The ASSISTANT app: GATEWAY UP, WATCHDOG OK last tick 8m ago, and a watchdog report of the device's own logs"></div>
+    <figcaption><b>The watchdog reporting in.</b> Every 30&#8239;minutes the agent wakes, reads <span class="mono">/tmp/*.log</span>, and files anything that looks wrong to a report the panel can show. Here it's noting Wi-Fi is still <span class="mono">COMPLETED</span>, that <span class="mono">wmt_loader</span>'s exit 255 is unchanged, and that the tailscaled netlink complaints are <em>&ldquo;already filed or platform chatter&rdquo;</em> — it is deduplicating against its own earlier findings, across a reboot.</figcaption></figure>
+  </div>
+
+  <p>It earns its keep. In its first unattended runs it worked out that Tailscale's router integration is broken because <span class="mono">iptables</span> doesn't exist on this image and a 3.18 kernel can't do what the modern client asks; it correlated a network blip against one it had filed hours earlier and concluded the pattern was upstream resets rather than a stuck daemon; and it flagged <span class="mono">wmt_loader</span>'s exit&nbsp;255 as <em>noise that would mask a real loader failure</em> — a fair critique of our own boot script.</p>
+
+  <p>Then it caught us. It reported <span class="mono">neonwire exited rc=143 after 16010s</span>, explicitly separated it from the intentional restart it had already catalogued, and asked who sent the SIGTERM. That was us, hot-swapping the binary over SSH. The watchdog noticed the operator.</p>
+
+  <p>It runs deliberately declawed: <strong>supervised</strong>, thirteen read-only commands, no delegation, filesystem access limited to the log directory and its own workspace. The assistant you talk to has full privileges; the thing that wakes at 3&#8239;AM does not.</p>
+
+  <div class="readout" role="note" aria-label="agent runtime facts">
+    <span>BINARY <b>28 MB</b> static armv7-musl</span>
+    <span>CROSS-BUILD <b>7 min</b></span>
+    <span>HEARTBEAT <b class="big">30 min</b></span>
+    <span>AUTONOMY <b>supervised</b> · 13 read-only cmds</span>
+  </div>
+</section>
+
+<section class="reveal">
   <h2>Hardware ghosts we exorcised</h2>
   <div class="panel amb"><span class="ptag">War stories</span>
   <div class="rows">
     <div class="row b"><div class="lab">Dead touch</div><p>Taps registered internally but nothing moved. The panel is a <strong>type-A multitouch</strong> device reporting <span class="mono">ABS_MT_POSITION</span> frames — the release-latch stuck after the first touch. Fix: fire on the <span class="mono">BTN_TOUCH</span> press edge, commit on the next <span class="mono">SYN_REPORT</span>.</p></div>
     <div class="row c"><div class="lab">Frozen glass</div><p>The UI updated in memory but the screen sat still. The LCM is a <strong>command-mode MIPI panel</strong> — it only pushes a frame on a pan/flip, never on a plain <span class="mono">memcpy</span>. Fix: cycle three hardware buffers and <span class="mono">FBIOPAN_DISPLAY</span> every frame.</p></div>
     <div class="row d"><div class="lab">Silent amp</div><p>Music played but no sound came out. The speaker amp is a mixer control the old code toggled through a chroot's <span class="mono">amixer</span> — gone after a reboot. Fix: set it natively via <span class="mono">controlC0</span> ioctls, decoding this kernel's 712-byte ALSA ABI struct by hand (arm32 aligns it differently than x86).</p></div>
+    <div class="row e"><div class="lab">No loopback</div><p>The agent gateway refused to start with a bare <span class="mono">Address not available</span>. Nothing on this device had ever needed <span class="mono">lo</span> — every packet went out over wlan0 — so the minimal init never brought loopback up, and binding <span class="mono">127.0.0.1</span> simply failed. Fix: <span class="mono">ifconfig lo up</span>, now step&nbsp;0 of the boot script.</p></div>
+    <div class="row b"><div class="lab">The silent watchdog</div><p>The log-triage heartbeat ran for hours, then a reboot quietly killed it. The worker only exists inside the agent's <span class="mono">daemon</span> command; the boot script launched <span class="mono">gateway start</span>, which serves requests but never ticks. The fix existed — <em>in the git repo</em>, never copied to the device. Every surface still looked green. Fix: deploy the script, and add a <strong>liveness line</strong> that reads the daemon's own state file, because a watchdog that stops produces no logs to notice it by.</p></div>
   </div></div>
 </section>
 
@@ -344,12 +375,14 @@ footer b{color:var(--cyan);font-weight:400}
     <span>SD sample banks · own <b>WAV</b> decoder</span>
     <span><b>CONSYS</b> Wi-Fi · dropbear · <b>Tailscale</b></span>
     <span>raw <b>MIPI</b> camera pipeline</span>
+    <span><b>ZeroClaw</b> agent · on-device, armv7-musl</span>
     <span>busybox initramfs · MTK boot framing</span>
   </div>
 </section>
 
 <footer>
   <span>NEONWIRE OS · <b>DL-7006</b> · MT8127</span>
+  <span><a href="https://naderlabs.io/blog/neonwire-cyberpunk-tablet-os">Read the devlog</a> · <a href="https://github.com/nukleas/neonwire-os">source</a></span>
   <span>own flash → own boot → <b>own the whole thing</b></span>
 </footer>
 
