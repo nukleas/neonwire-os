@@ -63,4 +63,26 @@ impl Backlight {
         self.blanked = false;
         self.set(AWAKE);
     }
+
+    /// Blank the panel immediately (agent / idle control).
+    pub fn blank(&mut self) {
+        self.blanked = true;
+        self.set(BLANK);
+    }
+
+    /// Set absolute brightness 0..=255 and treat as activity if non-zero.
+    pub fn set_level(&mut self, level: u32) {
+        let level = level.min(255);
+        if level == 0 {
+            self.blank();
+        } else {
+            self.last_activity = Instant::now();
+            self.blanked = false;
+            self.set(level);
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        self.available
+    }
 }

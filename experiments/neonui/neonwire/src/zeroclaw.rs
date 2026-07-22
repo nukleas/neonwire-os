@@ -72,11 +72,12 @@ fn agent_alias() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Read timeout is deliberately long — an LLM round-trip is seconds, not ms.
+/// Read timeout must exceed gateway.request_timeout_secs (180s on device).
+/// Tool-using turns easily pass 30s; the gateway used to 408 at that floor.
 fn http() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(5))
-        .timeout_read(Duration::from_secs(90))
+        .timeout_read(Duration::from_secs(200))
         .user_agent("neonwire-zeroclaw/0.1 (dl7006; armv7)")
         .build()
 }

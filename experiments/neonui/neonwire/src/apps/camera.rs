@@ -9,7 +9,7 @@ use neon_gfx::canvas::{mix, Canvas};
 use neon_gfx::geom::Rect;
 use neon_gfx::theme::*;
 
-use super::{App, Ctx, HitId, HitMap};
+use super::{App, ControlResult, Ctx, HitId, HitMap};
 
 const CAMGRAB: &str = "/mnt/sd/linux-lab/camgrab";
 const PREVIEW_RGB: &str = "/tmp/preview.rgb";
@@ -131,6 +131,42 @@ impl CameraApp {
         }
         self.last_meta_len = s.len() as u64;
     }
+
+    /// One-shot still: copy latest preview RGB, or fire camgrab once.
+    fn snap_to(&mut self, path: &str) -> ControlResult {
+        // Prefer live preview buffer if we have one.
+        if let Some((w, h, buf)) = &self.frame {
+            let mut out = Vec::with_capacity(8 + buf.len());
+            out.extend_from_slice(&(*w as u32).to_le_bytes());
+            out.extend_from_slice(&(*h as u32).to_le_bytes());
+            out.extend_from_slice(buf);
+            return match std::fs::write(path, &out) {
+                Ok(()) => ControlResult::Ok(format!("camera snap {path} {}x{} rgb", w, h)),
+                Err(e) => ControlResult::Err(format!("write {path}: {e}")),
+            };
+        }
+        if std::path::Path::new(PREVIEW_RGB).exists() {
+            return match std::fs::copy(PREVIEW_RGB, path) {
+                Ok(_) => ControlResult::Ok(format!("camera snap {path} (preview file)")),
+                Err(e) => ControlResult::Err(format!("copy preview: {e}")),
+            };
+        }
+        // Fire a one-shot grab into /tmp then copy.
+        let raw = "/tmp/frame.raw";
+        match std::process::Command::new(CAMGRAB)
+            .args([raw, "14", "0"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+        {
+            Ok(st) if st.success() => match std::fs::copy(raw, path) {
+                Ok(_) => ControlResult::Ok(format!("camera snap {path} (camgrab)")),
+                Err(e) => ControlResult::Err(format!("copy raw: {e}")),
+            },
+            Ok(st) => ControlResult::Err(format!("camgrab exit {st}")),
+            Err(e) => ControlResult::Err(format!("camgrab: {e}")),
+        }
+    }
 }
 
 impl App for CameraApp {
@@ -143,6 +179,35 @@ impl App for CameraApp {
     fn tick_ms(&self) -> u64 {
         // Poll preview file often; stream process writes on its own pace.
         100
+    }
+
+    fn control(&mut self, op: &str, arg: &str, _ctx: &mut Ctx) -> ControlResult {
+        let op = op.to_ascii_lowercase();
+        match op.as_str() {
+            "start" | "stream" | "on" => {
+                self.paused = false;
+                self.spawn_stream();
+                ControlResult::Ok("camera stream starting".into())
+            }
+            "stop" | "off" | "pause" => {
+                self.paused = true;
+                self.kill_stream();
+                ControlResult::Ok("camera stream stopped".into())
+            }
+            "snap" | "shot" | "capture" => {
+                let path = if arg.trim().is_empty() {
+                    "/tmp/cam-snap.rgb"
+                } else {
+                    arg.trim()
+                };
+                self.snap_to(path)
+            }
+            "status" | "" => ControlResult::Ok(format!(
+                "camera online={} frames={} fails={} paused={} shut={} gain={}",
+                self.online, self.frames, self.fails, self.paused, self.shut, self.gain
+            )),
+            _ => ControlResult::Unhandled,
+        }
     }
 
     fn on_enter(&mut self) {

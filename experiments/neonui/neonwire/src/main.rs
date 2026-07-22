@@ -10,13 +10,16 @@ mod apps;
 mod audio;
 mod backlight;
 mod collectors;
+mod control;
 mod hass;
+mod keys;
 mod ocint;
 mod power;
 mod rail;
 mod shell;
 mod songs;
 mod statusbar;
+mod voice;
 mod zeroclaw;
 mod widgets;
 mod wpa;
@@ -40,7 +43,24 @@ fn main() {
         Some("--power-test") => power_test(),
         Some("--ocint-probe") => ocint_probe(),
         Some("--hass-probe") => hass_probe(),
+        Some("--voice-probe") => voice_probe(args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2)),
         _ => run_shell(&args),
+    }
+}
+
+/// Headless mic + STT smoke (SSH-friendly).
+fn voice_probe(secs: u32) {
+    println!("VOICE PROBE secs={secs}");
+    match voice::record_and_stt(secs, voice::SttMode::Command) {
+        Ok((text, peak)) => {
+            println!("peak={peak}");
+            println!("text={text:?}");
+            println!("VOICE PROBE OK");
+        }
+        Err(e) => {
+            eprintln!("VOICE PROBE FAIL: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

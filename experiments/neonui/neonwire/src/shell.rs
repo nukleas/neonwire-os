@@ -9,16 +9,22 @@ use std::time::{Duration, Instant};
 
 use neon_gfx::fb::Fb;
 use neon_gfx::geom::Rect;
-use neon_gfx::input::{poll_fd, Touch};
+use neon_gfx::input::{poll_fds, Touch};
 use neon_gfx::theme::*;
 
 use crate::apps::home::{Home, HIT_LAUNCH0, TILES};
-use crate::apps::{App, Ctx, HitMap};
+use crate::apps::{App, ControlResult, Ctx, HitMap};
 use crate::backlight::Backlight;
 use crate::collectors::Collectors;
+use crate::control::{self, BlCmd, Cmd, ViewTarget, APP_NAMES};
+use crate::hass;
+use crate::keys::{Key, Keys};
 use crate::power::{self, PowerMgr, PowerState};
 use crate::rail::{self, HIT_RAIL_APP0, RAIL_W};
 use crate::statusbar::{self, BAR_H, HIT_HOME};
+
+/// App index for ASSISTANT — must match Shell::apps order / TILES.
+const APP_ASSIST: usize = 8;
 
 enum Screen {
     Home,
@@ -28,6 +34,7 @@ enum Screen {
 pub struct Shell {
     fb: Fb,
     touch: Option<Touch>,
+    keys: Option<Keys>,
     apps: Vec<Box<dyn App>>,
     screen: Screen,
     home: Home,
@@ -42,9 +49,11 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(fb: Fb, touch: Option<Touch>) -> Shell {
+        let keys = Keys::open().map_err(|e| eprintln!("keys: {e}")).ok();
         Shell {
             fb,
             touch,
+            keys,
             apps: vec![
                 Box::new(crate::apps::system::SystemApp::new()),
                 Box::new(crate::apps::network::NetworkApp::new()),
@@ -175,6 +184,254 @@ impl Shell {
         self.dirty = true;
     }
 
+    fn go_home(&mut self) {
+        if !matches!(self.screen, Screen::Home) {
+            self.leave_current_app();
+            self.screen = Screen::Home;
+            self.dirty = true;
+        }
+    }
+
+    fn current_view_name(&self) -> String {
+        match self.screen {
+            Screen::Home => "home".into(),
+            Screen::App(i) => APP_NAMES.get(i).unwrap_or(&"?").to_string(),
+        }
+    }
+
+    /// Drain agent/shell commands from `/tmp/neonwire.cmd`.
+    /// All non-empty lines run in order (chips may queue multi-step sequences).
+    fn poll_control(&mut self) {
+        let Some(raw) = control::take_pending() else {
+            return;
+        };
+        let mut replies: Vec<String> = Vec::new();
+        for line in raw.lines() {
+            let t = line.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let Some(cmd) = control::parse_line(t) else {
+                continue;
+            };
+            let reply = self.dispatch_cmd(cmd);
+            eprintln!("ctl: {t} -> {reply}");
+            replies.push(reply);
+        }
+        if !replies.is_empty() {
+            control::write_reply(&replies.join(" | "));
+            self.dirty = true;
+        }
+    }
+
+    fn on_key(&mut self, key: Key) {
+        // Any key counts as activity for backlight.
+        let woke = self.backlight.on_activity();
+        match key {
+            Key::VolumeUp => {
+                // Vol+ → ASSIST (always, even if it only woke the screen)
+                self.open_app(APP_ASSIST);
+                self.toast = Some(("ASSIST".into(), Instant::now()));
+                self.dirty = true;
+                eprintln!("key: VOL+ -> assist");
+            }
+            Key::VolumeDown => {
+                self.go_home();
+                self.toast = Some(("HOME".into(), Instant::now()));
+                self.dirty = true;
+                eprintln!("key: VOL- -> home");
+            }
+            Key::Power => {
+                if woke {
+                    // first press after blank only woke the panel
+                    eprintln!("key: POWER woke");
+                } else if self.backlight.is_blanked() {
+                    self.backlight.wake();
+                    eprintln!("key: POWER wake");
+                } else {
+                    self.backlight.blank();
+                    eprintln!("key: POWER blank");
+                }
+                self.dirty = true;
+            }
+            Key::Other(c) => {
+                eprintln!("key: other code={c}");
+            }
+        }
+    }
+
+    fn dispatch_cmd(&mut self, cmd: Cmd) -> String {
+        match cmd {
+            Cmd::Help => control::help_text(),
+            Cmd::Unknown(m) => format!("err: {m}"),
+            Cmd::Toast(msg) => {
+                self.toast = Some((msg.clone(), Instant::now()));
+                self.backlight.wake();
+                format!("ok toast: {msg}")
+            }
+            Cmd::View(ViewTarget::Home) => {
+                self.go_home();
+                self.backlight.wake();
+                "ok view=home".into()
+            }
+            Cmd::View(ViewTarget::App(i)) => {
+                if i >= self.apps.len() {
+                    return format!("err: app index {i} out of range");
+                }
+                self.open_app(i);
+                self.backlight.wake();
+                format!("ok view={}", APP_NAMES.get(i).unwrap_or(&"?"))
+            }
+            Cmd::Backlight(BlCmd::On) | Cmd::Backlight(BlCmd::Wake) => {
+                self.backlight.wake();
+                "ok backlight=on".into()
+            }
+            Cmd::Backlight(BlCmd::Off) => {
+                self.backlight.blank();
+                "ok backlight=off".into()
+            }
+            Cmd::Backlight(BlCmd::Level(n)) => {
+                self.backlight.set_level(n);
+                format!("ok backlight={n}")
+            }
+            Cmd::Status => {
+                self.write_status_file();
+                format!(
+                    "ok view={} blanked={} bl={} apps={}",
+                    self.current_view_name(),
+                    self.backlight.is_blanked(),
+                    self.backlight.is_available(),
+                    self.apps.len()
+                )
+            }
+            Cmd::Shot(path) => {
+                self.backlight.wake();
+                self.draw();
+                match self.fb.shot(&path) {
+                    Ok(()) => format!("ok shot {path}"),
+                    Err(e) => format!("err shot: {e}"),
+                }
+            }
+            Cmd::Music(rest) => self.forward_app(6, &rest),
+            Cmd::Songs(rest) => self.forward_app(7, &rest),
+            Cmd::Camera(rest) => self.forward_app(5, &rest),
+            Cmd::Ha(rest) => self.dispatch_ha(&rest),
+        }
+    }
+
+    fn forward_app(&mut self, idx: usize, rest: &str) -> String {
+        if idx >= self.apps.len() {
+            return format!("err: no app {idx}");
+        }
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let op = parts.next().unwrap_or("").trim();
+        let arg = parts.next().unwrap_or("").trim();
+        let snap = &self.collectors.snap;
+        let mut ctx = Ctx {
+            snap,
+            toast: &mut self.toast,
+        };
+        match self.apps[idx].control(op, arg, &mut ctx) {
+            ControlResult::Ok(s) => {
+                self.dirty = true;
+                format!("ok {s}")
+            }
+            ControlResult::Err(s) => format!("err {s}"),
+            ControlResult::Unhandled => {
+                format!(
+                    "err {} unhandled op '{op}' — try status",
+                    APP_NAMES.get(idx).unwrap_or(&"app")
+                )
+            }
+        }
+    }
+
+    fn dispatch_ha(&mut self, rest: &str) -> String {
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let op = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+        let arg = parts.next().unwrap_or("").trim();
+        match op.as_str() {
+            "refresh" | "fetch" | "status" | "" => match hass::fetch() {
+                Ok(s) => {
+                    let mut line = format!(
+                        "ok ha entities={} lights_on={} switches_on={}",
+                        s.total, s.lights_on, s.switches_on
+                    );
+                    if let Some(w) = &s.weather {
+                        line.push_str(&format!(" weather={w}"));
+                    }
+                    line
+                }
+                Err(e) => format!("err ha: {e}"),
+            },
+            "list" => match hass::fetch() {
+                Ok(s) => {
+                    let mut out = format!("ok ha list ({})\n", s.total);
+                    for e in s.entities.iter().take(40) {
+                        out.push_str(&format!(
+                            "{} [{}] {}\n",
+                            e.entity_id,
+                            e.state,
+                            e.name.chars().take(32).collect::<String>()
+                        ));
+                    }
+                    out
+                }
+                Err(e) => format!("err ha: {e}"),
+            },
+            "toggle" => {
+                if arg.is_empty() {
+                    return "err ha toggle needs entity_id".into();
+                }
+                match hass::toggle(arg) {
+                    Ok(()) => format!("ok ha toggled {arg}"),
+                    Err(e) => format!("err ha: {e}"),
+                }
+            }
+            "on" => {
+                if arg.is_empty() {
+                    return "err ha on needs entity_id".into();
+                }
+                match hass::turn(arg, true) {
+                    Ok(()) => format!("ok ha on {arg}"),
+                    Err(e) => format!("err ha: {e}"),
+                }
+            }
+            "off" => {
+                if arg.is_empty() {
+                    return "err ha off needs entity_id".into();
+                }
+                match hass::turn(arg, false) {
+                    Ok(()) => format!("ok ha off {arg}"),
+                    Err(e) => format!("err ha: {e}"),
+                }
+            }
+            _ => format!("err ha unknown op '{op}' (refresh|list|toggle|on|off)"),
+        }
+    }
+
+    fn write_status_file(&self) {
+        let view = self.current_view_name();
+        let host = if self.collectors.snap.host.is_empty() {
+            "dl7006"
+        } else {
+            self.collectors.snap.host.as_str()
+        };
+        let batt = self
+            .collectors
+            .snap
+            .batt_pct
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "?".into());
+        let charging = self.collectors.snap.batt_charging;
+        let line = format!(
+            "view={view} host={host} batt={batt}% charging={charging} blanked={} apps={} control=v1\n",
+            self.backlight.is_blanked(),
+            self.apps.len()
+        );
+        let _ = std::fs::write(control::STATUS_PATH, line);
+    }
+
     fn on_tap(&mut self, sx: i32, sy: i32) {
         let Some(id) = self.hits.hit(sx, sy) else {
             return;
@@ -182,11 +439,7 @@ impl Shell {
 
         // global nav (rail)
         if id == HIT_HOME {
-            if !matches!(self.screen, Screen::Home) {
-                self.leave_current_app();
-                self.screen = Screen::Home;
-                self.dirty = true;
-            }
+            self.go_home();
             return;
         }
         if (HIT_RAIL_APP0..HIT_RAIL_APP0 + TILES.len() as u32).contains(&id) {
@@ -225,22 +478,48 @@ impl Shell {
             let elapsed = last_tick.elapsed().as_millis() as u64;
             let wait = tick_ms.saturating_sub(elapsed).max(10) as i32;
 
-            let mut taps = Vec::new();
-            if let Some(t) = &mut self.touch {
-                if poll_fd(t.fd(), wait) {
-                    let (w, h) = (self.fb.xres as i32, self.fb.yres as i32);
-                    taps = t.drain(w, h);
-                }
-            } else {
+            // Poll touch + hardware keys together.
+            let mut fds = Vec::new();
+            let mut touch_i = None;
+            let mut keys_i = None;
+            if let Some(t) = &self.touch {
+                touch_i = Some(fds.len());
+                fds.push(t.fd());
+            }
+            if let Some(k) = &self.keys {
+                keys_i = Some(fds.len());
+                fds.push(k.fd());
+            }
+            let ready = if fds.is_empty() {
                 std::thread::sleep(Duration::from_millis(wait as u64));
-            }
-            for (sx, sy) in taps {
-                eprintln!("tap screen({sx},{sy})");
-                if self.backlight.on_activity() {
-                    continue;
+                0
+            } else {
+                poll_fds(&fds, wait)
+            };
+
+            if let (Some(ti), Some(t)) = (touch_i, self.touch.as_mut()) {
+                if ready & (1 << ti) != 0 {
+                    let (w, h) = (self.fb.xres as i32, self.fb.yres as i32);
+                    for (sx, sy) in t.drain(w, h) {
+                        eprintln!("tap screen({sx},{sy})");
+                        if self.backlight.on_activity() {
+                            continue;
+                        }
+                        self.on_tap(sx, sy);
+                    }
                 }
-                self.on_tap(sx, sy);
             }
+            let mut key_events = Vec::new();
+            if let (Some(ki), Some(k)) = (keys_i, self.keys.as_mut()) {
+                if ready & (1 << ki) != 0 {
+                    key_events = k.drain();
+                }
+            }
+            for key in key_events {
+                self.on_key(key);
+            }
+            // Agent control plane — after taps/keys so chips can queue cmds.
+            self.poll_control();
             self.backlight.tick();
 
             if last_tick.elapsed().as_millis() as u64 >= tick_ms {
@@ -258,6 +537,7 @@ impl Shell {
                     let mut ctx = Ctx { snap, toast: &mut self.toast };
                     self.apps[i].tick(&mut ctx);
                 }
+                self.write_status_file();
                 self.dirty = true;
             }
             if self.dirty && !self.backlight.is_blanked() {

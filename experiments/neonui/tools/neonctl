@@ -1,0 +1,60 @@
+#!/bin/sh
+# neonctl — talk to the live neonwire UI from shell / ZeroClaw.
+#
+# Usage:
+#   neonctl help
+#   neonctl view music
+#   neonctl toast hello
+#   neonctl backlight 128
+#   neonctl music play
+#   neonctl songs list
+#   neonctl camera snap /tmp/cam.rgb
+#   neonctl ha list
+#   neonctl status
+#
+# Protocol: write one line to /tmp/neonwire.cmd; neonwire replies in
+# /tmp/neonwire.reply. Status snapshot always at /tmp/neonwire.status.
+
+CMD=/tmp/neonwire.cmd
+REPLY=/tmp/neonwire.reply
+STATUS=/tmp/neonwire.status
+
+if [ $# -eq 0 ]; then
+  echo "usage: neonctl <cmd> [args...]"
+  echo "       neonctl help"
+  echo "status file: $STATUS"
+  [ -f "$STATUS" ] && cat "$STATUS"
+  exit 1
+fi
+
+# Convenience: bare "status" just cats the live file (no wait) when UI is up.
+if [ "$1" = "status" ] && [ $# -eq 1 ] && [ -f "$STATUS" ]; then
+  # still poke the control plane so reply is fresh
+  :
+fi
+
+rm -f "$REPLY"
+# Single line command.
+printf '%s\n' "$*" > "$CMD"
+
+# Wait up to ~5s for reply (busybox sleep is 1s min on some builds).
+i=0
+while [ $i -lt 25 ]; do
+  if [ -f "$REPLY" ]; then
+    cat "$REPLY"
+    # leave reply for a moment so agent can re-read; next call removes it
+    exit 0
+  fi
+  # 200ms-ish via busybox usleep if present
+  if command -v usleep >/dev/null 2>&1; then
+    usleep 200000
+  else
+    sleep 1
+    i=$((i + 4))
+  fi
+  i=$((i + 1))
+done
+
+echo "err: timeout waiting for neonwire (is it running?)"
+[ -f "$STATUS" ] && echo "last status: $(cat "$STATUS")"
+exit 2

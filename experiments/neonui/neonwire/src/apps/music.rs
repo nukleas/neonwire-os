@@ -8,7 +8,7 @@ use neon_gfx::canvas::{mix, Canvas};
 use neon_gfx::geom::Rect;
 use neon_gfx::theme::*;
 
-use super::{App, Ctx, HitId, HitMap};
+use super::{App, ControlResult, Ctx, HitId, HitMap};
 use crate::audio::{speaker_amp, Engine, PatternSpec, STEPS, TRACKS};
 
 /// Mini-notation presets (validated against strudel-mini's parser). GRID is
@@ -142,6 +142,24 @@ impl MusicApp {
             e.state.volume.store(self.vol, Ordering::Relaxed);
             e.state.playing.store(self.playing, Ordering::Relaxed);
         }
+    }
+
+    fn set_playing(&mut self, on: bool) {
+        if on == self.playing {
+            return;
+        }
+        self.playing = on;
+        if self.playing {
+            if self.engine.is_none() {
+                self.engine = Some(Engine::start(self.spec(), self.bpm, self.vol));
+            }
+            speaker_amp(true);
+        } else {
+            self.playhead = 0;
+            self.engine = None;
+            speaker_amp(false);
+        }
+        self.sync_engine();
     }
 }
 
@@ -296,23 +314,79 @@ impl App for MusicApp {
         }
     }
 
+    fn control(&mut self, op: &str, arg: &str, _ctx: &mut Ctx) -> ControlResult {
+        let op = op.to_ascii_lowercase();
+        match op.as_str() {
+            "play" | "start" => {
+                self.set_playing(true);
+                ControlResult::Ok(format!("music playing bpm={} vol={}", self.bpm, self.vol))
+            }
+            "stop" => {
+                self.set_playing(false);
+                ControlResult::Ok("music stopped".into())
+            }
+            "toggle" => {
+                self.set_playing(!self.playing);
+                ControlResult::Ok(if self.playing {
+                    "music playing".into()
+                } else {
+                    "music stopped".into()
+                })
+            }
+            "bpm" => match arg.trim().parse::<u32>() {
+                Ok(n) => {
+                    self.bpm = n.clamp(40, 300);
+                    self.sync_engine();
+                    self.mark_dirty();
+                    ControlResult::Ok(format!("music bpm={}", self.bpm))
+                }
+                Err(_) => ControlResult::Err("music bpm needs a number".into()),
+            },
+            "vol" | "volume" => match arg.trim().parse::<u32>() {
+                Ok(n) => {
+                    self.vol = n.min(256);
+                    self.sync_engine();
+                    self.mark_dirty();
+                    ControlResult::Ok(format!("music vol={}", self.vol))
+                }
+                Err(_) => ControlResult::Err("music vol needs 0..=256".into()),
+            },
+            "preset" => {
+                let a = arg.trim().to_ascii_lowercase();
+                let idx = if let Ok(n) = a.parse::<usize>() {
+                    n.min(PRESETS.len() - 1)
+                } else {
+                    PRESETS
+                        .iter()
+                        .position(|(n, _)| n.eq_ignore_ascii_case(&a))
+                        .unwrap_or(usize::MAX)
+                };
+                if idx >= PRESETS.len() {
+                    return ControlResult::Err(format!(
+                        "presets: {}",
+                        PRESETS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join("|")
+                    ));
+                }
+                self.preset = idx;
+                self.sync_engine();
+                self.mark_dirty();
+                ControlResult::Ok(format!("music preset={}", PRESETS[idx].0))
+            }
+            "status" | "" => ControlResult::Ok(format!(
+                "music playing={} bpm={} vol={} preset={}",
+                self.playing,
+                self.bpm,
+                self.vol,
+                PRESETS[self.preset].0
+            )),
+            _ => ControlResult::Unhandled,
+        }
+    }
+
     fn on_tap(&mut self, id: HitId, _ctx: &mut Ctx) -> bool {
         match id {
             HIT_PLAY => {
-                self.playing = !self.playing;
-                if self.playing {
-                    if self.engine.is_none() {
-                        self.engine = Some(Engine::start(self.spec(), self.bpm, self.vol));
-                    }
-                    speaker_amp(true);
-                } else {
-                    self.playhead = 0;
-                    // tear the engine down so hw:0,5 is free for the SONGS app
-                    // (Engine::drop joins the thread + closes pcm + amp off)
-                    self.engine = None;
-                    speaker_amp(false);
-                }
-                self.sync_engine();
+                self.set_playing(!self.playing);
                 true
             }
             HIT_BPM_DN => {

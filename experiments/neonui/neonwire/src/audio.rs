@@ -265,7 +265,7 @@ fn ioctl_ctl_elem_write() -> libc::c_int {
         | 0x13) as libc::c_int
 }
 
-fn ctl_set_enum(name: &str, item: u32) -> io::Result<()> {
+pub(crate) fn ctl_set_enum(name: &str, item: u32) -> io::Result<()> {
     let dev = std::ffi::CString::new(CTL_DEV).unwrap();
     let fd = unsafe { libc::open(dev.as_ptr(), libc::O_RDWR) };
     if fd < 0 {
@@ -297,6 +297,42 @@ pub fn speaker_amp(on: bool) {
             eprintln!("mixer: Audio_Speaker_PGA_gain: {e}");
         }
     }
+}
+
+/// Built-in mic path (stock audio_device.xml `builtin_Mic_SingleMic`).
+/// Bare arecord without this records near-silence; enum indices verified
+/// against on-device amixer items (2026-07-21).
+pub fn mic_arm() {
+    // Audio_MIC1_Mode_Select: ACCMODE=0
+    let _ = ctl_set_enum("Audio_MIC1_Mode_Select", 0);
+    // Audio_MicSource1_Setting: ADC1=0
+    let _ = ctl_set_enum("Audio_MicSource1_Setting", 0);
+    // Audio_ADC_*_Sel: idle=0, AIN=1, Preamp=2
+    let _ = ctl_set_enum("Audio_ADC_1_Sel", 2);
+    let _ = ctl_set_enum("Audio_ADC_2_Sel", 2);
+    // Audio_ADC_*_Switch: Off=0, On=1
+    let _ = ctl_set_enum("Audio_ADC_1_Switch", 1);
+    let _ = ctl_set_enum("Audio_ADC_2_Switch", 1);
+    // Audio_Preamp*_Switch: OPEN=0, IN_ADC1=1, IN_ADC2=2, IN_ADC3=3
+    let _ = ctl_set_enum("Audio_Preamp1_Switch", 1);
+    let _ = ctl_set_enum("Audio_Preamp2_Switch", 3);
+    // Audio_PGA*_Setting: -6,0,6,12,18,24 → 24Db=5 (weak MEMS; AGC cleans after)
+    let _ = ctl_set_enum("Audio_PGA1_Setting", 5);
+    let _ = ctl_set_enum("Audio_PGA2_Setting", 5);
+    // Handset_PGA_GAIN: -21..9 step 2 → 9Db = index 15
+    let _ = ctl_set_enum("Handset_PGA_GAIN", 15);
+    // Voice_Amp_Switch: Off=0, On=1
+    if let Err(e) = ctl_set_enum("Voice_Amp_Switch", 1) {
+        eprintln!("mixer: Voice_Amp_Switch On: {e}");
+    }
+}
+
+pub fn mic_disarm() {
+    let _ = ctl_set_enum("Audio_Preamp1_Switch", 0);
+    let _ = ctl_set_enum("Audio_Preamp2_Switch", 0);
+    let _ = ctl_set_enum("Audio_ADC_1_Switch", 0);
+    let _ = ctl_set_enum("Audio_ADC_2_Switch", 0);
+    let _ = ctl_set_enum("Voice_Amp_Switch", 0);
 }
 
 // ---- sequencer audio engine (strudel-core pattern scheduler, B3) ----

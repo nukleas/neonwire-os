@@ -143,7 +143,7 @@ impl TextPrompt {
         match id {
             KB_X | KB_CANCEL => PromptResult::Cancelled,
             KB_SPACE => {
-                if self.buf.len() < 63 {
+                if self.buf.len() < 200 {
                     self.buf.push(' ');
                 }
                 PromptResult::Open
@@ -168,7 +168,7 @@ impl TextPrompt {
                             self.buf.pop();
                         }
                         ch => {
-                            if self.buf.len() < 63 {
+                            if self.buf.len() < 200 {
                                 self.buf.push(ch as char);
                             }
                         }

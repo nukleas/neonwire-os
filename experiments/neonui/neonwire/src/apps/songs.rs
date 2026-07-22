@@ -13,7 +13,7 @@ use neon_gfx::canvas::{mix, Canvas};
 use neon_gfx::geom::Rect;
 use neon_gfx::theme::*;
 
-use super::{App, Ctx, HitId, HitMap};
+use super::{App, ControlResult, Ctx, HitId, HitMap};
 use crate::songs::SongPlayer;
 
 const SONGS_DIR: &str = "/mnt/sd/linux-lab/songs";
@@ -268,6 +268,102 @@ impl SongsApp {
             }
             Err(e) => self.error = Some(format!("read: {e}")),
         }
+    }
+
+    fn ensure_scanned(&mut self) {
+        if !self.scanned {
+            self.folders = scan_folders();
+            self.scanned = true;
+        }
+    }
+
+    fn list_summary(&mut self) -> String {
+        self.ensure_scanned();
+        let mut out = String::new();
+        let mut flat = 0usize;
+        for (fi, fo) in self.folders.iter().enumerate() {
+            out.push_str(&format!("[{fi}] {}/\n", fo.name));
+            for (ti, tr) in fo.tracks.iter().enumerate() {
+                out.push_str(&format!("  {flat}: {}/{}\n", fo.name, tr.title));
+                let _ = ti;
+                flat += 1;
+            }
+        }
+        if out.is_empty() {
+            out.push_str("(no songs under /mnt/sd/linux-lab/songs)");
+        }
+        out
+    }
+
+    fn play_spec(&mut self, spec: &str) -> ControlResult {
+        self.ensure_scanned();
+        let spec = spec.trim();
+        if spec.is_empty() {
+            // play first track
+            let label = self.folders.first().and_then(|fo| {
+                fo.tracks.first().map(|tr| format!("{}/{}", fo.name, tr.title))
+            });
+            if label.is_some() {
+                self.play(0, 0);
+                return ControlResult::Ok(format!("songs play {}", label.unwrap()));
+            }
+            return ControlResult::Err("no songs found".into());
+        }
+        // flat index
+        if let Ok(n) = spec.parse::<usize>() {
+            let mut flat = 0usize;
+            for (fi, fo) in self.folders.iter().enumerate() {
+                for ti in 0..fo.tracks.len() {
+                    if flat == n {
+                        let title = fo.tracks[ti].title.clone();
+                        let folder = fo.name.clone();
+                        self.play(fi, ti);
+                        return ControlResult::Ok(format!("songs play {folder}/{title}"));
+                    }
+                    flat += 1;
+                }
+            }
+            return ControlResult::Err(format!("no track index {n}"));
+        }
+        // folder/track or "folder track"
+        let (folder, track) = if let Some((a, b)) = spec.split_once('/') {
+            (a.trim(), b.trim())
+        } else if let Some((a, b)) = spec.split_once(char::is_whitespace) {
+            (a.trim(), b.trim())
+        } else {
+            // match title substring across library
+            let q = spec.to_ascii_lowercase();
+            for (fi, fo) in self.folders.iter().enumerate() {
+                for (ti, tr) in fo.tracks.iter().enumerate() {
+                    if tr.title.to_ascii_lowercase().contains(&q)
+                        || fo.name.to_ascii_lowercase().contains(&q)
+                    {
+                        let title = tr.title.clone();
+                        let folder = fo.name.clone();
+                        self.play(fi, ti);
+                        return ControlResult::Ok(format!("songs play {folder}/{title}"));
+                    }
+                }
+            }
+            return ControlResult::Err(format!("no match for '{spec}' — try songs list"));
+        };
+        let fl = folder.to_ascii_lowercase();
+        let tl = track.to_ascii_lowercase();
+        for (fi, fo) in self.folders.iter().enumerate() {
+            if !fo.name.to_ascii_lowercase().contains(&fl) && fo.name.to_ascii_lowercase() != fl {
+                continue;
+            }
+            for (ti, tr) in fo.tracks.iter().enumerate() {
+                if tr.title.to_ascii_lowercase().contains(&tl) || tr.title.eq_ignore_ascii_case(track)
+                {
+                    let title = tr.title.clone();
+                    let folder = fo.name.clone();
+                    self.play(fi, ti);
+                    return ControlResult::Ok(format!("songs play {folder}/{title}"));
+                }
+            }
+        }
+        ControlResult::Err(format!("no track '{folder}/{track}'"))
     }
 
     fn now_secs(&self) -> f32 {
@@ -566,6 +662,56 @@ impl App for SongsApp {
                 }
                 c.text(px, y, &line.chars().take(max_ch).collect::<String>(), TEXT_DIM, 1);
                 y += 18;
+            }
+        }
+    }
+
+    fn control(&mut self, op: &str, arg: &str, _ctx: &mut Ctx) -> ControlResult {
+        let op = op.to_ascii_lowercase();
+        match op.as_str() {
+            "stop" => {
+                self.stop();
+                ControlResult::Ok("songs stopped".into())
+            }
+            "list" | "ls" => ControlResult::Ok(self.list_summary()),
+            "play" | "start" => self.play_spec(arg),
+            "vol" | "volume" => match arg.trim().parse::<u32>() {
+                Ok(n) => {
+                    self.vol = n.min(256);
+                    if let Some(p) = &self.player {
+                        p.state.volume.store(self.vol, Ordering::Relaxed);
+                    }
+                    ControlResult::Ok(format!("songs vol={}", self.vol))
+                }
+                Err(_) => ControlResult::Err("songs vol needs 0..=256".into()),
+            },
+            "status" | "" => {
+                let now = match self.playing {
+                    Some((f, t)) => format!(
+                        "{}/{}",
+                        self.folders.get(f).map(|x| x.name.as_str()).unwrap_or("?"),
+                        self.folders
+                            .get(f)
+                            .and_then(|x| x.tracks.get(t))
+                            .map(|x| x.title.as_str())
+                            .unwrap_or("?")
+                    ),
+                    None => "stopped".into(),
+                };
+                ControlResult::Ok(format!("songs now={now} vol={}", self.vol))
+            }
+            _ => {
+                // bare "songs <query>" → play match
+                if !op.is_empty() {
+                    let q = if arg.is_empty() {
+                        op
+                    } else {
+                        format!("{op} {arg}")
+                    };
+                    self.play_spec(&q)
+                } else {
+                    ControlResult::Unhandled
+                }
             }
         }
     }

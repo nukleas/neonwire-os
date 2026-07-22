@@ -33,7 +33,7 @@ pub struct InputEvent {
     pub code: u16,
     pub value: i32,
 }
-const EV_SIZE: usize = std::mem::size_of::<InputEvent>();
+pub const EV_SIZE: usize = std::mem::size_of::<InputEvent>();
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -217,4 +217,35 @@ pub fn poll_fd(fd: libc::c_int, timeout_ms: i32) -> bool {
     let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
     let r = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
     r > 0 && (pfd.revents & libc::POLLIN) != 0
+}
+
+/// poll() several fds; returns a bitset of which indices are readable (bit i = fds[i]).
+pub fn poll_fds(fds: &[libc::c_int], timeout_ms: i32) -> u32 {
+    if fds.is_empty() {
+        if timeout_ms > 0 {
+            unsafe {
+                libc::usleep((timeout_ms as u32).saturating_mul(1000));
+            }
+        }
+        return 0;
+    }
+    let mut pfds: Vec<libc::pollfd> = fds
+        .iter()
+        .map(|&fd| libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        })
+        .collect();
+    let r = unsafe { libc::poll(pfds.as_mut_ptr(), pfds.len() as libc::nfds_t, timeout_ms) };
+    if r <= 0 {
+        return 0;
+    }
+    let mut bits = 0u32;
+    for (i, p) in pfds.iter().enumerate() {
+        if i < 32 && (p.revents & libc::POLLIN) != 0 {
+            bits |= 1 << i;
+        }
+    }
+    bits
 }

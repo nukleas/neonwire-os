@@ -51,6 +51,15 @@ impl Ctx<'_> {
     }
 }
 
+/// Result of an agent/shell control command forwarded to an app.
+#[derive(Debug)]
+pub enum ControlResult {
+    /// App does not handle this op.
+    Unhandled,
+    Ok(String),
+    Err(String),
+}
+
 pub trait App {
     fn title(&self) -> &'static str;
     fn accent(&self) -> u32;
@@ -73,5 +82,10 @@ pub trait App {
     /// used by --record to time-align a host-rendered audio track.
     fn media_pos_ms(&self) -> Option<u32> {
         None
+    }
+    /// Agent control plane: `op` is the first token after the app verb,
+    /// `arg` is the remainder. Default: unhandled.
+    fn control(&mut self, _op: &str, _arg: &str, _ctx: &mut Ctx) -> ControlResult {
+        ControlResult::Unhandled
     }
 }
