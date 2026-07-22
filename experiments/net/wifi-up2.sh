@@ -89,31 +89,39 @@ fi
 say "8. UI — prefer live-updated neonwire from SD (camera stream etc.)"
 # Boot init may start the initramfs /bin/neonwire first. After SD is up, bind the
 # SD copy over it and restart so the latest UI runs without reflashing boot.
+# IMPORTANT: file bind-mounts pin an inode. After replacing $LAB/neonwire on the
+# SD, we must umount + remount or the tablet keeps running the old binary
+# (control plane silently missing → neonctl timeouts).
 if [ -x $LAB/neonwire ]; then
-  if ! mount | grep -q "on /bin/neonwire "; then
-    mount --bind $LAB/neonwire /bin/neonwire 2>/dev/null && echo "  bind SD neonwire -> /bin/neonwire"
-  else
-    echo "  SD neonwire already bound"
-  fi
-  [ -f /tmp/camgrab_exp ] || echo "4000 128" > /tmp/camgrab_exp
   killall neonwire camgrab 2>/dev/null
+  if mount | grep -q "on /bin/neonwire "; then
+    umount /bin/neonwire 2>/dev/null && echo "  unbound old /bin/neonwire inode"
+  fi
+  mount --bind $LAB/neonwire /bin/neonwire 2>/dev/null && echo "  bind SD neonwire -> /bin/neonwire" \
+    || echo "  bind failed — init may use stale /bin/neonwire"
+  [ -f /tmp/camgrab_exp ] || echo "4000 128" > /tmp/camgrab_exp
   echo "  neonwire restart requested (init respawns in ~2s)"
 else
   echo "  $LAB/neonwire missing — leaving baked-in UI"
 fi
 
-say "9. zeroclaw — on-device AI agent gateway (127.0.0.1:42617)"
+say "9. zeroclaw — on-device AI agent daemon (127.0.0.1:42617)"
 # Separate process; the neonwire ASSISTANT app POSTs to /webhook. Needs lo (see
 # step 0) and a provider configured in $LAB/zeroclaw/cfg. Detached so a failure
 # here never blocks the UI.
+#
+# `daemon`, NOT `gateway start`: the heartbeat worker (periodic log triage, see
+# cfg/agents/watcher/workspace/HEARTBEAT.md) only runs under `daemon`, which is
+# gateway + channels + heartbeat + scheduler. `gateway start` serves /webhook
+# but never ticks the heartbeat — that cost us a silent no-op (2026-07-22).
 ZC=$LAB/zeroclaw/zeroclaw
 if [ -x "$ZC" ]; then
   if ps | grep -q "[z]eroclaw"; then
     echo "  already running"
   else
-    setsid "$ZC" --config-dir $LAB/zeroclaw/cfg gateway start \
+    setsid "$ZC" --config-dir $LAB/zeroclaw/cfg daemon \
       >/tmp/zc.log 2>&1 </dev/null &
-    echo "  gateway launched (log /tmp/zc.log)"
+    echo "  daemon launched (log /tmp/zc.log)"
   fi
 else
   echo "  $ZC not present — skipping"
