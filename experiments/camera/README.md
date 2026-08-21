@@ -388,6 +388,8 @@ seninf_drv.cpp for the register offsets behind these HAL calls.
 ## Files
 
 - `camprobe.c` — liveness probe (deployed at `/mnt/sd/linux-lab/camprobe`)
+- `camgrab.c` — HAL-free capture + live preview
+- `smi_vr.c` — toggle the SMI bandwidth VR scenario (hypothesis for the full-width IMGO DMA cliff)
 - Build: `armv7l-linux-musleabihf-gcc -Os -static -no-pie -Wall -o camprobe camprobe.c`
 
 ## A2 stock-capture reference (already in the repo)

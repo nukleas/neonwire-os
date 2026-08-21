@@ -54,7 +54,7 @@ impl HouseApp {
             scroll: 0,
             selected: None,
             snap: None,
-            status: "need hass.token on SD".into(),
+            status: "need hass.url + hass.token on SD".into(),
             loading: false,
             toggling: false,
             rx: None,
@@ -349,9 +349,9 @@ fn draw_side(c: &mut Canvas, r: Rect, app: &HouseApp, hits: &mut HitMap, fw: i32
     } else {
         c.text(r.x + 8, y, "no data yet", TEXT_DIM, 1);
         y += fh + 6;
-        c.text(r.x + 8, y, "put token at", TEXT_MUTED, 1);
+        c.text(r.x + 8, y, "put url + token at", TEXT_MUTED, 1);
         y += fh;
-        c.text(r.x + 8, y, "hass.token", TEXT_MUTED, 1);
+        c.text(r.x + 8, y, "hass.url / hass.token", TEXT_MUTED, 1);
     }
 
     // footer

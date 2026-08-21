@@ -1,8 +1,8 @@
 //! Home Assistant REST client (long-lived access token).
 //!
 //! Config on the tablet (SD lab dir, never commit secrets):
-//!   /mnt/sd/linux-lab/hass.url    e.g. http://100.x.x.x:8123
-//!   /mnt/sd/linux-lab/hass.token  long-lived access token
+//!   /mnt/sd/linux-lab/hass.url       e.g. http://homeassistant.local:8123
+//!   /mnt/sd/linux-lab/hass.token     long-lived access token
 //!   /mnt/sd/linux-lab/hass.entities  optional allowlist (one entity_id per line)
 //!
 //! API (same as home-agent tools):
@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-const DEFAULT_BASE: &str = "http://100.x.x.x:8123";
 const CONFIG_URL: &str = "/mnt/sd/linux-lab/hass.url";
 const CONFIG_TOKEN: &str = "/mnt/sd/linux-lab/hass.token";
 const CONFIG_ENTITIES: &str = "/mnt/sd/linux-lab/hass.entities";
@@ -75,12 +74,21 @@ impl std::fmt::Display for HassError {
     }
 }
 
-fn base_url() -> String {
+fn base_url() -> Result<String, HassError> {
     std::fs::read_to_string(CONFIG_URL)
-        .ok()
+        .map_err(|_| {
+            HassError::Config(
+                "missing hass.url (e.g. http://homeassistant.local:8123)".into(),
+            )
+        })
         .map(|s| s.trim().trim_end_matches('/').to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_BASE.into())
+        .and_then(|s| {
+            if s.is_empty() {
+                Err(HassError::Config("empty hass.url".into()))
+            } else {
+                Ok(s)
+            }
+        })
 }
 
 fn token() -> Result<String, HassError> {
@@ -122,7 +130,7 @@ fn agent() -> ureq::Agent {
 }
 
 fn get_json(path: &str) -> Result<String, HassError> {
-    let base = base_url();
+    let base = base_url()?;
     let tok = token()?;
     let url = format!("{base}{path}");
     match agent().get(&url).set("Authorization", &format!("Bearer {tok}")).call() {
@@ -136,7 +144,7 @@ fn get_json(path: &str) -> Result<String, HassError> {
 }
 
 fn post_json(path: &str, body: &Value) -> Result<(), HassError> {
-    let base = base_url();
+    let base = base_url()?;
     let tok = token()?;
     let url = format!("{base}{path}");
     match agent()
@@ -167,7 +175,7 @@ pub fn ping() -> Result<String, HassError> {
 
 /// Pull states and project into a HOUSE-friendly snapshot.
 pub fn fetch() -> Result<Snapshot, HassError> {
-    let base = base_url();
+    let base = base_url()?;
     let raw = get_json("/api/states")?;
     let rows: Vec<Value> =
         serde_json::from_str(&raw).map_err(|e| HassError::Parse(e.to_string()))?;

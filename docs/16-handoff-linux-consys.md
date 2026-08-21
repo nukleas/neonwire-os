@@ -1,7 +1,7 @@
 # Handoff — DL7006 live Linux + CONSYS / Wi‑Fi power
 
 **Date:** 2026-07-19  
-**Workspace:** `$REPO`  
+**Workspace:** this repository  
 **Audience:** next human or agent continuing the L1 Linux lab  
 **Read with:** [14-live-linux-lab.md](14-live-linux-lab.md), [15-consys-power-path.md](15-consys-power-path.md), [checklist.md](checklist.md)
 

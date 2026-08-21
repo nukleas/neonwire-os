@@ -3,7 +3,7 @@
 **Date:** 2026-07-19
 **Workspace:** `experiments/fbui/`
 **Depends on:** L1 live Linux ([14-live-linux-lab.md](14-live-linux-lab.md)), writable `/dev/fb0` (mtkfb)
-**Aesthetic source:** `in-repo palette` design tokens (JetBrains Mono, `cd-*` palette, CRT scanline + glow motifs)
+**Aesthetic source:** in-repo neon palette (JetBrains Mono, cyan/magenta, CRT scanline + glow motifs) — see `experiments/neonui/neon-gfx/src/theme.rs`
 
 ---
 

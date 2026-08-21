@@ -5,6 +5,8 @@
 
 Goal: attach via Preloader, read the flash map, dump images we trust, prove we can write them back.
 
+Commands below use `$REPO` for the clone of this repository. `tools/mtkclient` is not shipped here — clone [bkerler/mtkclient](https://github.com/bkerler/mtkclient) into that path and make a venv at `tools/venv`. Dumps go under `reference/` (gitignored).
+
 ## A1 — Host tooling
 
 Already largely done in this repo:

@@ -5,12 +5,12 @@ The serial ACM is slow and wedges under load; once wifi is up this is the fast,
 reliable transfer path. Streams gzip(file) as base64 into a device-side
 `base64 -d | gunzip > target`, then verifies sha256.
 
-  ./tools/net-push.py local.bin /mnt/sd/linux-lab/target [--host 192.168.4.32]
+  ./tools/net-push.py local.bin /mnt/sd/linux-lab/target --host <tablet-ip>
 
 Also usable as a one-shot command runner:
   ./tools/net-push.py --cmd 'uptime'
 """
-import argparse, base64, gzip, hashlib, socket, sys, time
+import argparse, base64, gzip, hashlib, os, socket, sys, time
 
 def connect(host, port=23, timeout=8):
     s = socket.create_connection((host, port), timeout=timeout)
@@ -51,10 +51,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src", nargs="?")
     ap.add_argument("dst", nargs="?")
-    ap.add_argument("--host", default="192.168.4.32")
+    ap.add_argument("--host", default=os.environ.get("NEONWIRE_HOST", ""))
     ap.add_argument("--cmd")
     ap.add_argument("--run")
     args = ap.parse_args()
+    if not args.host:
+        sys.exit("pass --host <tablet-ip> or set NEONWIRE_HOST")
 
     s = connect(args.host)
     try:

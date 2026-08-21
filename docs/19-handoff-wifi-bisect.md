@@ -1,7 +1,7 @@
 # Handoff — Wi‑Fi / CONSYS bisect (Android works → L1 fails)
 
 **Date:** 2026-07-19  
-**Workspace:** `$REPO`  
+**Workspace:** this repository  
 **Audience:** next agent (Claude or human) continuing Wi‑Fi on DL7006  
 **Read first:** this file, then [18-wifi-consys-plan.md](18-wifi-consys-plan.md), [15-consys-power-path.md](15-consys-power-path.md), [16-handoff-linux-consys.md](16-handoff-linux-consys.md)
 

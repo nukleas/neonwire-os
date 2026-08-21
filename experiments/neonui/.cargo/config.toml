@@ -3,6 +3,8 @@ target = "armv7-unknown-linux-musleabihf"
 
 [target.armv7-unknown-linux-musleabihf]
 # The project's musl cross-GCC is only the link driver; rustc bundles its own musl libc.
+# Override for your machine:
+#   CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=/path/to/armv7l-linux-musleabihf-gcc
 linker = "armv7l-linux-musleabihf-gcc"
 rustflags = [
   "-C", "target-feature=+crt-static",

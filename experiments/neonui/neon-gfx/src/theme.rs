@@ -1,4 +1,4 @@
-//! cyberdesign tokens (0xRRGGBB), from in-repo palette src/tokens/{base,semantic}.ts.
+//! Palette tokens (0xRRGGBB). Accent families are the NEONWIRE identity.
 //! Accent families are swappable at runtime (Settings theme switcher); everything
 //! else is shared chrome. Default identity: cyan/magenta (NEONWIRE).
 

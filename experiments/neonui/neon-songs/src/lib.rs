@@ -6,7 +6,7 @@
 //! processor/channel/mapper/scheduler are ports of strudel-audio's modules
 //! (upstream hard-depends on cpal, unusable on static musl). offline.rs is
 //! reworked into the streaming `SongRenderer`. Keep ports in sync with
-//! $HOME/src/strudel-rs when pulling.
+//! the pinned strudel-rs rev in the workspace Cargo.toml.
 
 mod channel;
 mod mapper;

@@ -1,5 +1,13 @@
 # Project charter — DL7006 reverse-engineering kit
 
+> **Where this actually went.** The charter below is the original mission:
+> own flash, own boot, map hardware, optional Linux moonshot. All of that
+> happened, then the moonshot became the project — a self-built Linux with a
+> neon framebuffer OS, Wi-Fi, camera, live synthesis, and an on-device agent.
+> Read this file as the starting intent. The living snapshot is the
+> [root README](../README.md); the path through the notebook is
+> [docs/README.md](README.md).
+
 ## One-sentence mission
 
 Use a throwaway DigiLand **DL7006-KB** (MT8127) as a **lab platform** to learn MediaTek flash, Android boot chains, and board-level RE — shipping notes, dumps, and restore scripts, not a consumer product.

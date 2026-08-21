@@ -66,10 +66,25 @@ zImage*
 *~
 *.swp
 
+# --- device-local secrets (live on the tablet SD, never commit) ---
+*.key
+.gh_token
+hass.token
+authorized_keys
+id_rsa
+id_ed25519
+*.pem
+
+# --- publish.sh staging ---
+dist/
+
 # --- rust workspace build artifacts ---
 experiments/neonui/target/
 experiments/camera/camprobe
 experiments/camera/camdump
+experiments/camera/camgrab
+experiments/camera/ion_probe
+experiments/camera/smi_vr
 
 # --- camera diagnostic scratch captures (regenerated from camgrab/tooling) ---
 experiments/camera/*.png

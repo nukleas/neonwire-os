@@ -25,6 +25,7 @@ System is mtk partition **`4`**. Data is partition **`data`**. Boot is still raw
 **Do one command per Preloader session.** If a step fails with USB Overflow / format error, power-cycle and continue with remaining steps — do not assume all three failed.
 
 ```bash
+# $REPO = clone of this repository
 cd $REPO
 source tools/venv/bin/activate
 cd tools/mtkclient

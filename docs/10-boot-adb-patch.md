@@ -27,6 +27,7 @@ Kernel payload is **byte-identical** to stock (MTK `KERNEL` block reused).
 `mtk.py wo` needs **three** args: `offset` `length` `filename` (length = file size in hex or decimal).
 
 ```bash
+# $REPO = clone of this repository
 cd $REPO
 
 # Interactive helper (sudo + Preloader wait):

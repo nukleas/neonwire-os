@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Source this file:  source $REPO/tools/mtk-env.sh
+# Source from the repo root:  source tools/mtk-env.sh
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 # shellcheck disable=SC1091

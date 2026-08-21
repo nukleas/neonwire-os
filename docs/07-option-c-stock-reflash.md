@@ -29,6 +29,8 @@ You can finish tooling + practice Preloader connect **before** the ZIP arrives.
 
 ## 1. One-time host setup
 
+Commands below use `$REPO` for the clone of this repository. `tools/mtkclient` is not shipped here — clone [bkerler/mtkclient](https://github.com/bkerler/mtkclient) into that path.
+
 ```bash
 cd $REPO
 
